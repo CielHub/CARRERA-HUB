@@ -2,6 +2,7 @@ import os
 import time
 import json
 import subprocess
+from datetime import datetime
 
 # Nama file untuk menyimpan pengaturan
 FILE_KONFIGURASI = "config.json"
@@ -10,6 +11,7 @@ FILE_KONFIGURASI = "config.json"
 WARNA_CYAN = '\033[96m'
 WARNA_HIJAU = '\033[92m'
 WARNA_KUNING = '\033[93m'
+WARNA_MERAH = '\033[91m'
 WARNA_RESET = '\033[0m'
 
 def bersihkan_layar():
@@ -33,6 +35,9 @@ def cetak_info(teks):
 def cetak_sukses(teks):
     print(f"{WARNA_HIJAU}[+]{WARNA_RESET} {teks}")
 
+def cetak_error(teks):
+    print(f"{WARNA_MERAH}[!]{WARNA_RESET} {teks}")
+
 def deteksi_paket_roblox():
     try:
         hasil = subprocess.check_output("pm list packages | grep roblox", shell=True, text=True)
@@ -48,50 +53,146 @@ def deteksi_paket_roblox():
         return []
 
 def muat_konfigurasi():
-    """Membaca data dari file config.json jika file tersebut ada."""
     if os.path.exists(FILE_KONFIGURASI):
         with open(FILE_KONFIGURASI, 'r') as file:
             return json.load(file)
     return None
 
 def bersihkan_cache(nama_paket):
-    """
-    Fungsi ini menghapus file cache aplikasi di Android.
-    Membutuhkan izin storage di Termux (termux-setup-storage).
-    """
     cetak_info(f"Mencoba membersihkan cache untuk {nama_paket}...")
-    
-    # Path folder cache di penyimpanan eksternal Android
     path_cache = f"/storage/emulated/0/Android/data/{nama_paket}/cache/*"
-    
     try:
-        # Menjalankan perintah hapus paksa (rm -rf) melalui shell Termux
         subprocess.run(f"rm -rf {path_cache}", shell=True, stderr=subprocess.DEVNULL)
         cetak_sukses(f"Cache untuk {nama_paket} berhasil dibersihkan.")
     except Exception as e:
-        print(f"{WARNA_KUNING}[!] Terjadi kesalahan saat menghapus cache: {e}{WARNA_RESET}")
+        cetak_error(f"Terjadi kesalahan saat menghapus cache: {e}")
 
-def tampilkan_menu():
-    bersihkan_layar()
-    print(f"{WARNA_CYAN} _  __ _   _  ____   ___  ")
-    print("| |/ /| | | ||  _ \\ / _ \\ ")
-    print("| ' / | | | || |_) | | | |")
-    print("| . \\ | |_| ||  _ <| |_| |")
-    print("|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}")
-    print("Version 3.5.2")
-    print("-" * 60)
+# --- FUNGSI BARU UNTUK MESIN UTAMA ---
+
+def cek_roblox_berjalan(nama_paket):
+    """Mengecek apakah aplikasi berjalan menggunakan perintah 'ps'."""
+    try:
+        hasil = subprocess.check_output(f"ps -ef | grep {nama_paket} | grep -v grep", shell=True, text=True)
+        return nama_paket in hasil
+    except subprocess.CalledProcessError:
+        return False
+
+def tutup_roblox(nama_paket):
+    """Menutup paksa aplikasi Roblox."""
+    cetak_info(f"Menutup paksa {nama_paket}...")
+    subprocess.run(f"am force-stop {nama_paket}", shell=True, stderr=subprocess.DEVNULL)
+    time.sleep(2)
+
+def buka_roblox(nama_paket, url_server):
+    """Membuka Roblox langsung menuju Private Server / Game URL."""
+    cetak_info(f"Membuka Roblox: {nama_paket}")
+    # Perintah am start untuk membuka URL di Android (akan memicu aplikasi yang sesuai)
+    perintah = f'am start -a android.intent.action.VIEW -d "{url_server}"'
+    subprocess.run(perintah, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+
+def kirim_webhook(url, pesan):
+    """Placeholder untuk fitur Discord Webhook."""
+    if url:
+        pass # Nanti kita isi dengan kode request (membutuhkan modul 'requests')
+
+def mesin_utama_rejoiner(config):
+    """Ini adalah jantung dari Auto Rejoiner 'Kuro'."""
+    paket_target = config.get("selected_packages", "")
+    url_global = config.get("global_url", "")
     
-    print("What would you like to do?")
-    print("  1) Setup Configuration (First Run)")
-    print("  2) Edit Configuration")
-    print("  3) Run Script (Launch apps + optimizations)")
-    print("  4) Cookie Management")
-    print("  5) Clear All App Caches")
-    print("  6) Package Manager (Install/Uninstall apps)")
-    print("  7) Executor Key Manager")
-    print("  8) Uninstall Kuro")
-    print("  9) Exit")
-    print()
+    if not paket_target or paket_target == "none" or not url_global:
+        cetak_error("Paket aplikasi atau Global URL belum diatur. Silakan jalankan Menu 1 kembali.")
+        return
+
+    # Mengambil pengaturan waktu (mengubah string ke angka/integer)
+    try:
+        delay_launch = int(config.get("delay_launch", 40))
+        delay_relaunch = int(config.get("delay_relaunch", 40))
+        server_hop_interval = config.get("server_hop_interval", "0")
+        
+        # Mengekstrak angka pertama saja jika formatnya "0 (Disabled)"
+        hop_waktu = int(server_hop_interval.split()[0]) 
+    except ValueError:
+        delay_launch = 40
+        delay_relaunch = 40
+        hop_waktu = 0
+
+    fitur_clear_cache = config.get("auto_clear_cache", "y").lower() == 'y'
+    waktu_mulai_game = None
+
+    bersihkan_layar()
+    print(f"{WARNA_CYAN}========================================{WARNA_RESET}")
+    print(f"{WARNA_HIJAU}  KURO AUTO REJOINER - ENGINE STARTED{WARNA_RESET}")
+    print(f"{WARNA_CYAN}========================================{WARNA_RESET}")
+    print(f"Target: {paket_target}")
+    print("Tekan CTRL+C kapan saja untuk menghentikan skrip.\n")
+
+    # Persiapan Awal (Launch pertama)
+    cetak_info(f"Menunggu delay awal: {delay_launch} detik...")
+    time.sleep(delay_launch)
+    
+    if fitur_clear_cache:
+        bersihkan_cache(paket_target)
+        
+    buka_roblox(paket_target, url_global)
+    waktu_mulai_game = time.time()
+    cetak_sukses("Game berhasil diluncurkan (Sesi Pertama).")
+
+    # SIKLUS PEMANTAUAN UTAMA (Looping)
+    try:
+        while True:
+            # 1. Cek apakah game masih berjalan
+            status_jalan = cek_roblox_berjalan(paket_target)
+
+            if status_jalan:
+                # Game berjalan lancar, sekarang cek fitur Server Hop (jika aktif)
+                if hop_waktu > 0 and waktu_mulai_game is not None:
+                    waktu_berjalan = time.time() - waktu_mulai_game
+                    if waktu_berjalan >= hop_waktu:
+                        print(f"\n{WARNA_KUNING}[!] Waktu Server Hop tercapai ({hop_waktu} detik). Mengganti server...{WARNA_RESET}")
+                        tutup_roblox(paket_target)
+                        time.sleep(3) # Jeda sebentar setelah menutup
+                        
+                        if fitur_clear_cache:
+                            bersihkan_cache(paket_target)
+                            
+                        buka_roblox(paket_target, url_global)
+                        waktu_mulai_game = time.time()
+                
+                # Fitur Status Update (Placeholder)
+                # Jika waktu update tercapai -> kirim_webhook(...)
+                
+                # Jeda sebelum mengecek status lagi agar CPU tidak berat
+                time.sleep(5) 
+
+            else:
+                # Game terdeteksi tertutup / crash
+                waktu_kejadian = datetime.now().strftime("%H:%M:%S")
+                print(f"\n{WARNA_MERAH}[!] [{waktu_kejadian}] Roblox tertutup atau crash! Memulai proses Rejoin...{WARNA_RESET}")
+                
+                # Fitur Webhook Alert (Placeholder)
+                url_webhook = config.get("webhook_url", "")
+                if url_webhook:
+                    cetak_info("Mengirim alert ke Discord...")
+                    # kirim_webhook(url_webhook, "Roblox Crashed! Auto Rejoining...")
+
+                # Menunggu sesuai delay relaunch
+                cetak_info(f"Menunggu delay relaunch: {delay_relaunch} detik...")
+                time.sleep(delay_relaunch)
+                
+                if fitur_clear_cache:
+                    bersihkan_cache(paket_target)
+                    
+                buka_roblox(paket_target, url_global)
+                waktu_mulai_game = time.time()
+                cetak_sukses("Berhasil Rejoin ke dalam game!")
+
+    except KeyboardInterrupt:
+        # Menangkap saat pengguna menekan CTRL+C
+        print(f"\n{WARNA_KUNING}[!] Mesin Rejoiner dihentikan oleh pengguna.{WARNA_RESET}")
+        time.sleep(2)
+
+# --- BAGIAN SETUP DAN MENU (DIPERBARUI) ---
 
 def setup_configuration():
     bersihkan_layar()
@@ -113,7 +214,7 @@ def setup_configuration():
         paket_ditemukan = deteksi_paket_roblox()
         
         if not paket_ditemukan:
-            print(f"{WARNA_KUNING}[!] Tidak ada aplikasi Roblox yang ditemukan di sistem.{WARNA_RESET}")
+            cetak_error("Tidak ada aplikasi Roblox yang ditemukan di sistem.")
         else:
             print(f"{WARNA_CYAN}[?]{WARNA_RESET} Discovered packages:")
             for index, paket in enumerate(paket_ditemukan, start=1):
@@ -146,7 +247,7 @@ def setup_configuration():
     screenshot = tanya_pengguna("Capture screenshot on critical alerts? [y/N]", "n")
     status_update = tanya_pengguna("Status Update Interval (minutes)", "0 (Disabled)")
     
-    server_hop = tanya_pengguna("Server Hop Interval (seconds)", "0 (Disabled)")
+    server_hop = tanya_pengguna("Server Hop Interval (seconds) [Default: 0 (Disabled)] [e.g. 3600]", "0 (Disabled)")
     if server_hop.startswith("0"):
         cetak_sukses("Server Hop (Auto Rejoin) DISABLED.")
     else:
@@ -167,11 +268,8 @@ def setup_configuration():
     else:
         cetak_sukses("Auto-clear app cache disabled.")
         
-    # Fitur Delta Bypass telah dihapus dari sini sesuai permintaanmu
-        
     inject_scripts = tanya_pengguna("Inject scripts to 'autoexecute' folder? [y/N]", "n")
     
-    # Menyimpan data tanpa variabel delta_bypass
     data_konfigurasi = {
         "package_mode": mode_paket,
         "selected_packages": paket_dipilih,
@@ -197,6 +295,28 @@ def setup_configuration():
     cetak_sukses("Configuration saved.\n")
     input("Press Enter to return to menu...")
 
+def tampilkan_menu():
+    bersihkan_layar()
+    print(f"{WARNA_CYAN} _  __ _   _  ____   ___  ")
+    print("| |/ /| | | ||  _ \\ / _ \\ ")
+    print("| ' / | | | || |_) | | | |")
+    print("| . \\ | |_| ||  _ <| |_| |")
+    print("|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}")
+    print("Version 3.5.2")
+    print("-" * 60)
+    
+    print("What would you like to do?")
+    print("  1) Setup Configuration (First Run)")
+    print("  2) Edit Configuration")
+    print("  3) Run Script (Launch apps + optimizations)")
+    print("  4) Cookie Management")
+    print("  5) Clear All App Caches")
+    print("  6) Package Manager (Install/Uninstall apps)")
+    print("  7) Executor Key Manager")
+    print("  8) Uninstall Kuro")
+    print("  9) Exit")
+    print()
+
 def main():
     while True:
         tampilkan_menu()
@@ -206,31 +326,20 @@ def main():
             setup_configuration()
             
         elif pilihan == '3':
-            # Logika eksekusi awal (Run Script)
-            print()
             config = muat_konfigurasi()
             if not config:
-                print(f"{WARNA_KUNING}[!] Konfigurasi belum dibuat. Silakan pilih Menu 1 terlebih dahulu.{WARNA_RESET}")
+                cetak_error("Konfigurasi belum dibuat. Silakan pilih Menu 1 terlebih dahulu.")
                 time.sleep(2)
                 continue
             
-            paket_target = config.get("selected_packages", "")
-            hapus_cache_otomatis = config.get("auto_clear_cache", "y")
-            
-            # Jika user memilih 'y' pada pengaturan, cache akan dibersihkan sebelum buka game
-            if hapus_cache_otomatis.lower() == 'y':
-                bersihkan_cache(paket_target)
-                
-            cetak_info("Menjalankan Auto Rejoiner Script...")
-            # Nanti kita tambahkan logika untuk membuka aplikasi Roblox di sini
-            input("\n[Tekan Enter untuk kembali ke menu]")
+            # Menjalankan mesin utama
+            mesin_utama_rejoiner(config)
             
         elif pilihan == '5':
-            # Logika pembersihan cache manual
             print()
             config = muat_konfigurasi()
             if not config:
-                print(f"{WARNA_KUNING}[!] Konfigurasi belum dibuat. Skrip tidak tahu aplikasi mana yang harus dibersihkan.{WARNA_RESET}")
+                cetak_error("Konfigurasi belum dibuat. Skrip tidak tahu aplikasi mana yang harus dibersihkan.")
                 time.sleep(2)
                 continue
                 
@@ -238,8 +347,7 @@ def main():
             if paket_target and paket_target != "none":
                 bersihkan_cache(paket_target)
             else:
-                print(f"{WARNA_KUNING}[!] Tidak ada aplikasi yang dipilih dalam konfigurasi.{WARNA_RESET}")
-            
+                cetak_error("Tidak ada aplikasi yang dipilih dalam konfigurasi.")
             time.sleep(2)
             
         elif pilihan == '8':
@@ -255,7 +363,7 @@ def main():
             time.sleep(1)
             
         else:
-            print(f"\nPilihan {pilihan} tidak valid.")
+            cetak_error(f"Pilihan {pilihan} tidak valid.")
             time.sleep(1)
 
 if __name__ == "__main__":
