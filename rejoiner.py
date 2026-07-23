@@ -67,10 +67,7 @@ def bersihkan_cache(nama_paket):
     except Exception as e:
         cetak_error(f"Terjadi kesalahan saat menghapus cache: {e}")
 
-# --- FUNGSI BARU UNTUK MESIN UTAMA ---
-
 def cek_roblox_berjalan(nama_paket):
-    """Mengecek apakah aplikasi berjalan menggunakan perintah 'ps'."""
     try:
         hasil = subprocess.check_output(f"ps -ef | grep {nama_paket} | grep -v grep", shell=True, text=True)
         return nama_paket in hasil
@@ -78,25 +75,16 @@ def cek_roblox_berjalan(nama_paket):
         return False
 
 def tutup_roblox(nama_paket):
-    """Menutup paksa aplikasi Roblox."""
     cetak_info(f"Menutup paksa {nama_paket}...")
     subprocess.run(f"am force-stop {nama_paket}", shell=True, stderr=subprocess.DEVNULL)
     time.sleep(2)
 
 def buka_roblox(nama_paket, url_server):
-    """Membuka Roblox langsung menuju Private Server / Game URL."""
     cetak_info(f"Membuka Roblox: {nama_paket}")
-    # Perintah am start untuk membuka URL di Android (akan memicu aplikasi yang sesuai)
     perintah = f'am start -a android.intent.action.VIEW -d "{url_server}"'
     subprocess.run(perintah, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
-def kirim_webhook(url, pesan):
-    """Placeholder untuk fitur Discord Webhook."""
-    if url:
-        pass # Nanti kita isi dengan kode request (membutuhkan modul 'requests')
-
 def mesin_utama_rejoiner(config):
-    """Ini adalah jantung dari Auto Rejoiner 'Kuro'."""
     paket_target = config.get("selected_packages", "")
     url_global = config.get("global_url", "")
     
@@ -104,13 +92,10 @@ def mesin_utama_rejoiner(config):
         cetak_error("Paket aplikasi atau Global URL belum diatur. Silakan jalankan Menu 1 kembali.")
         return
 
-    # Mengambil pengaturan waktu (mengubah string ke angka/integer)
     try:
         delay_launch = int(config.get("delay_launch", 40))
         delay_relaunch = int(config.get("delay_relaunch", 40))
         server_hop_interval = config.get("server_hop_interval", "0")
-        
-        # Mengekstrak angka pertama saja jika formatnya "0 (Disabled)"
         hop_waktu = int(server_hop_interval.split()[0]) 
     except ValueError:
         delay_launch = 40
@@ -127,7 +112,6 @@ def mesin_utama_rejoiner(config):
     print(f"Target: {paket_target}")
     print("Tekan CTRL+C kapan saja untuk menghentikan skrip.\n")
 
-    # Persiapan Awal (Launch pertama)
     cetak_info(f"Menunggu delay awal: {delay_launch} detik...")
     time.sleep(delay_launch)
     
@@ -138,45 +122,29 @@ def mesin_utama_rejoiner(config):
     waktu_mulai_game = time.time()
     cetak_sukses("Game berhasil diluncurkan (Sesi Pertama).")
 
-    # SIKLUS PEMANTAUAN UTAMA (Looping)
     try:
         while True:
-            # 1. Cek apakah game masih berjalan
             status_jalan = cek_roblox_berjalan(paket_target)
 
             if status_jalan:
-                # Game berjalan lancar, sekarang cek fitur Server Hop (jika aktif)
                 if hop_waktu > 0 and waktu_mulai_game is not None:
                     waktu_berjalan = time.time() - waktu_mulai_game
                     if waktu_berjalan >= hop_waktu:
                         print(f"\n{WARNA_KUNING}[!] Waktu Server Hop tercapai ({hop_waktu} detik). Mengganti server...{WARNA_RESET}")
                         tutup_roblox(paket_target)
-                        time.sleep(3) # Jeda sebentar setelah menutup
+                        time.sleep(3) 
                         
                         if fitur_clear_cache:
                             bersihkan_cache(paket_target)
                             
                         buka_roblox(paket_target, url_global)
                         waktu_mulai_game = time.time()
-                
-                # Fitur Status Update (Placeholder)
-                # Jika waktu update tercapai -> kirim_webhook(...)
-                
-                # Jeda sebelum mengecek status lagi agar CPU tidak berat
                 time.sleep(5) 
 
             else:
-                # Game terdeteksi tertutup / crash
                 waktu_kejadian = datetime.now().strftime("%H:%M:%S")
                 print(f"\n{WARNA_MERAH}[!] [{waktu_kejadian}] Roblox tertutup atau crash! Memulai proses Rejoin...{WARNA_RESET}")
                 
-                # Fitur Webhook Alert (Placeholder)
-                url_webhook = config.get("webhook_url", "")
-                if url_webhook:
-                    cetak_info("Mengirim alert ke Discord...")
-                    # kirim_webhook(url_webhook, "Roblox Crashed! Auto Rejoining...")
-
-                # Menunggu sesuai delay relaunch
                 cetak_info(f"Menunggu delay relaunch: {delay_relaunch} detik...")
                 time.sleep(delay_relaunch)
                 
@@ -188,11 +156,8 @@ def mesin_utama_rejoiner(config):
                 cetak_sukses("Berhasil Rejoin ke dalam game!")
 
     except KeyboardInterrupt:
-        # Menangkap saat pengguna menekan CTRL+C
         print(f"\n{WARNA_KUNING}[!] Mesin Rejoiner dihentikan oleh pengguna.{WARNA_RESET}")
         time.sleep(2)
-
-# --- BAGIAN SETUP DAN MENU (DIPERBARUI) ---
 
 def setup_configuration():
     bersihkan_layar()
@@ -210,7 +175,6 @@ def setup_configuration():
     if mode_paket == '1':
         cetak_info("Auto-detecting packages...\n")
         time.sleep(1)
-        
         paket_ditemukan = deteksi_paket_roblox()
         
         if not paket_ditemukan:
@@ -219,7 +183,6 @@ def setup_configuration():
             print(f"{WARNA_CYAN}[?]{WARNA_RESET} Discovered packages:")
             for index, paket in enumerate(paket_ditemukan, start=1):
                 print(f"  {index}) {paket}")
-            
             print("- Press <Enter> or 'all' to select ALL packages (Default)")
             print("- Type 'none' to skip, or enter indices (e.g. '1,3')")
             pilihan_indeks = tanya_pengguna("Select", "all")
@@ -247,27 +210,11 @@ def setup_configuration():
     screenshot = tanya_pengguna("Capture screenshot on critical alerts? [y/N]", "n")
     status_update = tanya_pengguna("Status Update Interval (minutes)", "0 (Disabled)")
     
-    server_hop = tanya_pengguna("Server Hop Interval (seconds) [Default: 0 (Disabled)] [e.g. 3600]", "0 (Disabled)")
-    if server_hop.startswith("0"):
-        cetak_sukses("Server Hop (Auto Rejoin) DISABLED.")
-    else:
-        cetak_sukses("Server Hop ENABLED.")
-        
+    server_hop = tanya_pengguna("Server Hop Interval (seconds)", "0 (Disabled)")
     offline_timeout = tanya_pengguna("Offline Timeout (seconds)", "300")
     auto_rotate = tanya_pengguna("Enable Auto Account Rotation on ban? [y/N]", "n")
-    
     auto_captcha = tanya_pengguna("Enable Auto Captcha Solver? [y/N]", "n")
-    if auto_captcha.lower() == 'n':
-        cetak_sukses("Auto Captcha Solver disabled.")
-    else:
-        cetak_sukses("Auto Captcha Solver enabled.")
-        
     clear_cache = tanya_pengguna("Auto-clear app cache on launch/relaunch? [Y/n]", "y")
-    if clear_cache.lower() == 'y':
-        cetak_sukses("Auto-clear app cache enabled.")
-    else:
-        cetak_sukses("Auto-clear app cache disabled.")
-        
     inject_scripts = tanya_pengguna("Inject scripts to 'autoexecute' folder? [y/N]", "n")
     
     data_konfigurasi = {
@@ -293,6 +240,61 @@ def setup_configuration():
         json.dump(data_konfigurasi, file, indent=4)
         
     cetak_sukses("Configuration saved.\n")
+    input("Press Enter to return to menu...")
+
+def edit_configuration():
+    """Fungsi untuk mengedit konfigurasi yang sudah ada."""
+    config_lama = muat_konfigurasi()
+    
+    if not config_lama:
+        cetak_error("Konfigurasi belum ada! Silakan jalankan Menu 1 (Setup) terlebih dahulu.")
+        time.sleep(2)
+        return
+
+    bersihkan_layar()
+    print(f"{WARNA_KUNING}--- EDIT CONFIGURATION ---{WARNA_RESET}")
+    print("Tekan Enter untuk mempertahankan pengaturan lama, atau ketik nilai baru.\n")
+    
+    # Mengambil nilai lama sebagai default
+    url_sama = tanya_pengguna("Use same Private Server URL for all packages? [Y/n]", config_lama.get("use_same_url", "y"))
+    url_global = tanya_pengguna("Global Private Server URL (or Game URL)", config_lama.get("global_url", ""))
+    mask_user = tanya_pengguna("Mask username in status table? (e.g. naxxxie) [y/N]", config_lama.get("mask_username", "n"))
+    delay_launch = tanya_pengguna("Delay between launching apps (seconds)", config_lama.get("delay_launch", "40"))
+    delay_relaunch = tanya_pengguna("Delay before relaunching crashed/disconnected apps (seconds)", config_lama.get("delay_relaunch", "40"))
+    webhook = tanya_pengguna("Discord Webhook URL (for critical alerts) [Enter to skip]", config_lama.get("webhook_url", ""))
+    screenshot = tanya_pengguna("Capture screenshot on critical alerts? [y/N]", config_lama.get("capture_screenshot", "n"))
+    status_update = tanya_pengguna("Status Update Interval (minutes)", config_lama.get("status_update_interval", "0 (Disabled)"))
+    server_hop = tanya_pengguna("Server Hop Interval (seconds)", config_lama.get("server_hop_interval", "0 (Disabled)"))
+    offline_timeout = tanya_pengguna("Offline Timeout (seconds)", config_lama.get("offline_timeout", "300"))
+    auto_rotate = tanya_pengguna("Enable Auto Account Rotation on ban? [y/N]", config_lama.get("auto_account_rotation", "n"))
+    auto_captcha = tanya_pengguna("Enable Auto Captcha Solver? [y/N]", config_lama.get("auto_captcha", "n"))
+    clear_cache = tanya_pengguna("Auto-clear app cache on launch/relaunch? [Y/n]", config_lama.get("auto_clear_cache", "y"))
+    inject_scripts = tanya_pengguna("Inject scripts to 'autoexecute' folder? [y/N]", config_lama.get("inject_scripts", "n"))
+
+    # Menyimpan kembali dengan mempertahankan package yang sudah terdeteksi di Setup awal
+    data_konfigurasi = {
+        "package_mode": config_lama.get("package_mode", "1"),
+        "selected_packages": config_lama.get("selected_packages", ""),
+        "use_same_url": url_sama,
+        "global_url": url_global,
+        "mask_username": mask_user,
+        "delay_launch": delay_launch,
+        "delay_relaunch": delay_relaunch,
+        "webhook_url": webhook,
+        "capture_screenshot": screenshot,
+        "status_update_interval": status_update,
+        "server_hop_interval": server_hop,
+        "offline_timeout": offline_timeout,
+        "auto_account_rotation": auto_rotate,
+        "auto_captcha": auto_captcha,
+        "auto_clear_cache": clear_cache,
+        "inject_scripts": inject_scripts
+    }
+    
+    with open(FILE_KONFIGURASI, 'w') as file:
+        json.dump(data_konfigurasi, file, indent=4)
+        
+    cetak_sukses("Configuration successfully updated.\n")
     input("Press Enter to return to menu...")
 
 def tampilkan_menu():
@@ -325,14 +327,15 @@ def main():
         if pilihan == '1':
             setup_configuration()
             
+        elif pilihan == '2':
+            edit_configuration()
+            
         elif pilihan == '3':
             config = muat_konfigurasi()
             if not config:
                 cetak_error("Konfigurasi belum dibuat. Silakan pilih Menu 1 terlebih dahulu.")
                 time.sleep(2)
                 continue
-            
-            # Menjalankan mesin utama
             mesin_utama_rejoiner(config)
             
         elif pilihan == '5':
@@ -358,7 +361,7 @@ def main():
             print("\nKeluar dari program. Sampai jumpa!")
             break 
             
-        elif pilihan in ['2', '4', '6', '7']:
+        elif pilihan in ['4', '6', '7']:
             print(f"\n{WARNA_KUNING}[i] Menu {pilihan} sedang dalam tahap pengembangan.{WARNA_RESET}")
             time.sleep(1)
             
