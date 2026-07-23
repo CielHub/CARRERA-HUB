@@ -4,7 +4,6 @@ import json
 import subprocess
 from datetime import datetime
 
-# Import baru untuk fitur Screenshot dan OCR
 try:
     from PIL import Image
     import pytesseract
@@ -14,6 +13,7 @@ except ImportError:
     exit()
 
 FILE_KONFIGURASI = "config.json"
+FILE_COOKIE = "cookies.json" # File baru untuk menyimpan 5-6 akun
 
 WARNA_CYAN = '\033[96m'
 WARNA_HIJAU = '\033[92m'
@@ -31,7 +31,6 @@ def tanya_pengguna(pertanyaan, nilai_default=None):
         teks_prompt = f"{WARNA_CYAN}[?]{WARNA_RESET} {pertanyaan}: "
         
     jawaban = input(teks_prompt).strip()
-    
     if jawaban == "" and nilai_default is not None:
         return nilai_default
     return jawaban
@@ -49,7 +48,6 @@ def deteksi_paket_roblox():
     try:
         hasil = subprocess.check_output("pm list packages | grep roblox", shell=True, text=True)
         paket_mentah = hasil.strip().split('\n')
-        
         daftar_paket = []
         for paket in paket_mentah:
             if paket:
@@ -64,6 +62,72 @@ def muat_konfigurasi():
         with open(FILE_KONFIGURASI, 'r') as file:
             return json.load(file)
     return None
+
+# --- FUNGSI BARU UNTUK MENU 4 ---
+def muat_cookie():
+    """Membaca daftar cookie dari file cookies.json."""
+    if os.path.exists(FILE_COOKIE):
+        with open(FILE_COOKIE, 'r') as file:
+            return json.load(file)
+    return []
+
+def simpan_cookie(daftar_cookie):
+    """Menyimpan daftar cookie ke file cookies.json."""
+    with open(FILE_COOKIE, 'w') as file:
+        json.dump(daftar_cookie, file, indent=4)
+
+def sensor_cookie(cookie_teks):
+    """Menyensor teks cookie agar tidak memenuhi layar Termux."""
+    if len(cookie_teks) > 30:
+        return f"{cookie_teks[:15]}...[DISENSOR]...{cookie_teks[-10:]}"
+    return cookie_teks
+
+def manajemen_cookie():
+    """Antarmuka untuk Menu 4 (Cookie Management)."""
+    while True:
+        bersihkan_layar()
+        print(f"{WARNA_CYAN}--- COOKIE MANAGEMENT ---{WARNA_RESET}")
+        daftar_cookie = muat_cookie()
+        
+        print(f"Total Akun Tersimpan: {len(daftar_cookie)}\n")
+        
+        if not daftar_cookie:
+            print(f"{WARNA_KUNING}[i] Belum ada cookie/akun yang disimpan.{WARNA_RESET}")
+        else:
+            for index, cookie in enumerate(daftar_cookie, start=1):
+                print(f"  {index}) Akun {index}: {sensor_cookie(cookie)}")
+                
+        print("\nPilihan:")
+        print("  1) Tambah Cookie Baru")
+        print("  2) Hapus Semua Cookie")
+        print("  3) Kembali ke Menu Utama")
+        
+        pilihan = input(f"\n{WARNA_CYAN}[?]{WARNA_RESET} Masukkan pilihan [1-3]: ").strip()
+        
+        if pilihan == '1':
+            cookie_baru = input(f"{WARNA_CYAN}[?]{WARNA_RESET} Tempelkan (Paste) teks Cookie baru di sini:\n> ").strip()
+            if cookie_baru:
+                # Validasi sederhana, biasanya cookie Roblox diawali peringatan tertentu
+                if "_|WARNING" not in cookie_baru:
+                    cetak_error("Teks ini sepertinya bukan Cookie Roblox yang valid (biasanya diawali _|WARNING).")
+                    time.sleep(2)
+                else:
+                    daftar_cookie.append(cookie_baru)
+                    simpan_cookie(daftar_cookie)
+                    cetak_sukses("Cookie akun berhasil ditambahkan!")
+                    time.sleep(1)
+        elif pilihan == '2':
+            konfirmasi = input(f"{WARNA_MERAH}[!] Yakin ingin menghapus semua akun? [y/N]: {WARNA_RESET}").strip().lower()
+            if konfirmasi == 'y':
+                simpan_cookie([])
+                cetak_sukses("Semua cookie berhasil dihapus.")
+                time.sleep(1)
+        elif pilihan == '3':
+            break
+        else:
+            cetak_error("Pilihan tidak valid.")
+            time.sleep(1)
+# --------------------------------
 
 def bersihkan_cache(nama_paket):
     cetak_info(f"Mencoba membersihkan cache untuk {nama_paket}...")
@@ -82,7 +146,7 @@ def cek_roblox_berjalan(nama_paket):
         return False
 
 def tutup_roblox(nama_paket):
-    cetak_info(f"Menutup paksa {nama_paket}...")
+    cetak_info(f"Menutup paksa {nama_paket} (Termasuk jendela Delta Lite)...")
     subprocess.run(f"am force-stop {nama_paket}", shell=True, stderr=subprocess.DEVNULL)
     time.sleep(2)
 
@@ -91,37 +155,24 @@ def buka_roblox(nama_paket, url_server):
     perintah = f'am start -a android.intent.action.VIEW -d "{url_server}"'
     subprocess.run(perintah, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
-# --- FUNGSI BARU: DETEKSI ERROR DI LAYAR ---
 def deteksi_error_layar():
-    """Mengambil screenshot dan mencari teks error (Disconnected)."""
     path_gambar = "/storage/emulated/0/kuro_screen.png"
-    
-    # Mengambil tangkapan layar menggunakan utilitas bawaan Android (screencap)
     subprocess.run(f"screencap -p {path_gambar}", shell=True, stderr=subprocess.DEVNULL)
-    
     if not os.path.exists(path_gambar):
         return False
-        
     try:
-        # Membuka gambar dan membaca teksnya menggunakan Tesseract
         gambar = Image.open(path_gambar)
         teks_di_layar = pytesseract.image_to_string(gambar).lower()
-        
-        # Daftar kata yang menandakan game terputus
         kata_kunci = ["disconnected", "kicked", "error code", "lost connection", "reconnect"]
-        
         for kata in kata_kunci:
             if kata in teks_di_layar:
-                return True # Ditemukan pesan error
+                return True 
         return False
-        
     except Exception as e:
         return False
     finally:
-        # Menghapus file gambar setelah selesai agar memori HP tidak penuh
         if os.path.exists(path_gambar):
             os.remove(path_gambar)
-# -------------------------------------------
 
 def mesin_utama_rejoiner(config):
     paket_target = config.get("selected_packages", "")
@@ -166,7 +217,6 @@ def mesin_utama_rejoiner(config):
             status_jalan = cek_roblox_berjalan(paket_target)
 
             if status_jalan:
-                # BAGIAN BARU: Cek layar jika ada pesan Disconnected
                 if deteksi_error_layar():
                     waktu_kejadian = datetime.now().strftime("%H:%M:%S")
                     print(f"\n{WARNA_MERAH}[!] [{waktu_kejadian}] Terdeteksi pesan Disconnected/Error di layar!{WARNA_RESET}")
@@ -181,29 +231,23 @@ def mesin_utama_rejoiner(config):
                     buka_roblox(paket_target, url_global)
                     waktu_mulai_game = time.time()
                     cetak_sukses("Berhasil Rejoin ke dalam game!")
-                    continue # Mengulang siklus dari awal
+                    continue 
                 
-                # Fitur Server Hop
                 if hop_waktu > 0 and waktu_mulai_game is not None:
                     waktu_berjalan = time.time() - waktu_mulai_game
                     if waktu_berjalan >= hop_waktu:
                         print(f"\n{WARNA_KUNING}[!] Waktu Server Hop tercapai ({hop_waktu} detik). Mengganti server...{WARNA_RESET}")
                         tutup_roblox(paket_target)
                         time.sleep(3) 
-                        
                         if fitur_clear_cache:
                             bersihkan_cache(paket_target)
-                            
                         buka_roblox(paket_target, url_global)
                         waktu_mulai_game = time.time()
-                
-                # Jeda sebelum cek status lagi (10 detik agar tidak terlalu berat memproses gambar)
                 time.sleep(10) 
 
             else:
                 waktu_kejadian = datetime.now().strftime("%H:%M:%S")
                 print(f"\n{WARNA_MERAH}[!] [{waktu_kejadian}] Roblox tertutup dari latar belakang! Memulai proses Rejoin...{WARNA_RESET}")
-                
                 cetak_info(f"Menunggu delay relaunch: {delay_relaunch} detik...")
                 time.sleep(delay_relaunch)
                 
@@ -230,7 +274,6 @@ def setup_configuration():
     mode_paket = tanya_pengguna("Choice", "1")
     
     paket_dipilih = "none"
-    
     if mode_paket == '1':
         cetak_info("Auto-detecting packages...\n")
         time.sleep(1)
@@ -261,14 +304,12 @@ def setup_configuration():
     url_sama = tanya_pengguna("Use same Private Server URL for all packages? [Y/n]", "y")
     url_global = tanya_pengguna("Global Private Server URL (or Game URL)")
     cetak_sukses("Global URL set.")
-    
     mask_user = tanya_pengguna("Mask username in status table? (e.g. naxxxie) [y/N]", "n")
     delay_launch = tanya_pengguna("Delay between launching apps (seconds)", "40")
     delay_relaunch = tanya_pengguna("Delay before relaunching crashed/disconnected apps (seconds)", "40")
     webhook = tanya_pengguna("Discord Webhook URL (for critical alerts) [Enter to skip]", "")
     screenshot = tanya_pengguna("Capture screenshot on critical alerts? [y/N]", "n")
     status_update = tanya_pengguna("Status Update Interval (minutes)", "0 (Disabled)")
-    
     server_hop = tanya_pengguna("Server Hop Interval (seconds)", "0 (Disabled)")
     offline_timeout = tanya_pengguna("Offline Timeout (seconds)", "300")
     auto_rotate = tanya_pengguna("Enable Auto Account Rotation on ban? [y/N]", "n")
@@ -303,7 +344,6 @@ def setup_configuration():
 
 def edit_configuration():
     config_lama = muat_konfigurasi()
-    
     if not config_lama:
         cetak_error("Konfigurasi belum ada! Silakan jalankan Menu 1 (Setup) terlebih dahulu.")
         time.sleep(2)
@@ -362,7 +402,6 @@ def tampilkan_menu():
     print("|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}")
     print("Version 3.5.2")
     print("-" * 60)
-    
     print("What would you like to do?")
     print("  1) Setup Configuration (First Run)")
     print("  2) Edit Configuration")
@@ -382,10 +421,8 @@ def main():
         
         if pilihan == '1':
             setup_configuration()
-            
         elif pilihan == '2':
             edit_configuration()
-            
         elif pilihan == '3':
             config = muat_konfigurasi()
             if not config:
@@ -393,7 +430,8 @@ def main():
                 time.sleep(2)
                 continue
             mesin_utama_rejoiner(config)
-            
+        elif pilihan == '4':
+            manajemen_cookie()
         elif pilihan == '5':
             print()
             config = muat_konfigurasi()
@@ -401,26 +439,21 @@ def main():
                 cetak_error("Konfigurasi belum dibuat. Skrip tidak tahu aplikasi mana yang harus dibersihkan.")
                 time.sleep(2)
                 continue
-                
             paket_target = config.get("selected_packages", "")
             if paket_target and paket_target != "none":
                 bersihkan_cache(paket_target)
             else:
                 cetak_error("Tidak ada aplikasi yang dipilih dalam konfigurasi.")
             time.sleep(2)
-            
         elif pilihan == '8':
             cetak_info("\nMenjalankan proses Uninstall Kuro...")
             time.sleep(2)
-            
         elif pilihan == '9':
             print("\nKeluar dari program. Sampai jumpa!")
             break 
-            
-        elif pilihan in ['4', '6', '7']:
+        elif pilihan in ['6', '7']:
             print(f"\n{WARNA_KUNING}[i] Menu {pilihan} sedang dalam tahap pengembangan.{WARNA_RESET}")
             time.sleep(1)
-            
         else:
             cetak_error(f"Pilihan {pilihan} tidak valid.")
             time.sleep(1)
