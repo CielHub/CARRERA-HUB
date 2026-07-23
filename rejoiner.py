@@ -4,10 +4,17 @@ import json
 import subprocess
 from datetime import datetime
 
-# Nama file untuk menyimpan pengaturan
+# Import baru untuk fitur Screenshot dan OCR
+try:
+    from PIL import Image
+    import pytesseract
+except ImportError:
+    print("\n[!] Modul Pillow atau pytesseract belum terinstal.")
+    print("[!] Jalankan: pip install pytesseract Pillow")
+    exit()
+
 FILE_KONFIGURASI = "config.json"
 
-# --- KODE WARNA UNTUK TERMUX ---
 WARNA_CYAN = '\033[96m'
 WARNA_HIJAU = '\033[92m'
 WARNA_KUNING = '\033[93m'
@@ -84,6 +91,38 @@ def buka_roblox(nama_paket, url_server):
     perintah = f'am start -a android.intent.action.VIEW -d "{url_server}"'
     subprocess.run(perintah, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
+# --- FUNGSI BARU: DETEKSI ERROR DI LAYAR ---
+def deteksi_error_layar():
+    """Mengambil screenshot dan mencari teks error (Disconnected)."""
+    path_gambar = "/storage/emulated/0/kuro_screen.png"
+    
+    # Mengambil tangkapan layar menggunakan utilitas bawaan Android (screencap)
+    subprocess.run(f"screencap -p {path_gambar}", shell=True, stderr=subprocess.DEVNULL)
+    
+    if not os.path.exists(path_gambar):
+        return False
+        
+    try:
+        # Membuka gambar dan membaca teksnya menggunakan Tesseract
+        gambar = Image.open(path_gambar)
+        teks_di_layar = pytesseract.image_to_string(gambar).lower()
+        
+        # Daftar kata yang menandakan game terputus
+        kata_kunci = ["disconnected", "kicked", "error code", "lost connection", "reconnect"]
+        
+        for kata in kata_kunci:
+            if kata in teks_di_layar:
+                return True # Ditemukan pesan error
+        return False
+        
+    except Exception as e:
+        return False
+    finally:
+        # Menghapus file gambar setelah selesai agar memori HP tidak penuh
+        if os.path.exists(path_gambar):
+            os.remove(path_gambar)
+# -------------------------------------------
+
 def mesin_utama_rejoiner(config):
     paket_target = config.get("selected_packages", "")
     url_global = config.get("global_url", "")
@@ -127,6 +166,24 @@ def mesin_utama_rejoiner(config):
             status_jalan = cek_roblox_berjalan(paket_target)
 
             if status_jalan:
+                # BAGIAN BARU: Cek layar jika ada pesan Disconnected
+                if deteksi_error_layar():
+                    waktu_kejadian = datetime.now().strftime("%H:%M:%S")
+                    print(f"\n{WARNA_MERAH}[!] [{waktu_kejadian}] Terdeteksi pesan Disconnected/Error di layar!{WARNA_RESET}")
+                    tutup_roblox(paket_target)
+                    time.sleep(2)
+                    
+                    cetak_info(f"Menunggu delay relaunch: {delay_relaunch} detik...")
+                    time.sleep(delay_relaunch)
+                    if fitur_clear_cache:
+                        bersihkan_cache(paket_target)
+                        
+                    buka_roblox(paket_target, url_global)
+                    waktu_mulai_game = time.time()
+                    cetak_sukses("Berhasil Rejoin ke dalam game!")
+                    continue # Mengulang siklus dari awal
+                
+                # Fitur Server Hop
                 if hop_waktu > 0 and waktu_mulai_game is not None:
                     waktu_berjalan = time.time() - waktu_mulai_game
                     if waktu_berjalan >= hop_waktu:
@@ -139,11 +196,13 @@ def mesin_utama_rejoiner(config):
                             
                         buka_roblox(paket_target, url_global)
                         waktu_mulai_game = time.time()
-                time.sleep(5) 
+                
+                # Jeda sebelum cek status lagi (10 detik agar tidak terlalu berat memproses gambar)
+                time.sleep(10) 
 
             else:
                 waktu_kejadian = datetime.now().strftime("%H:%M:%S")
-                print(f"\n{WARNA_MERAH}[!] [{waktu_kejadian}] Roblox tertutup atau crash! Memulai proses Rejoin...{WARNA_RESET}")
+                print(f"\n{WARNA_MERAH}[!] [{waktu_kejadian}] Roblox tertutup dari latar belakang! Memulai proses Rejoin...{WARNA_RESET}")
                 
                 cetak_info(f"Menunggu delay relaunch: {delay_relaunch} detik...")
                 time.sleep(delay_relaunch)
@@ -243,7 +302,6 @@ def setup_configuration():
     input("Press Enter to return to menu...")
 
 def edit_configuration():
-    """Fungsi untuk mengedit konfigurasi yang sudah ada."""
     config_lama = muat_konfigurasi()
     
     if not config_lama:
@@ -255,7 +313,6 @@ def edit_configuration():
     print(f"{WARNA_KUNING}--- EDIT CONFIGURATION ---{WARNA_RESET}")
     print("Tekan Enter untuk mempertahankan pengaturan lama, atau ketik nilai baru.\n")
     
-    # Mengambil nilai lama sebagai default
     url_sama = tanya_pengguna("Use same Private Server URL for all packages? [Y/n]", config_lama.get("use_same_url", "y"))
     url_global = tanya_pengguna("Global Private Server URL (or Game URL)", config_lama.get("global_url", ""))
     mask_user = tanya_pengguna("Mask username in status table? (e.g. naxxxie) [y/N]", config_lama.get("mask_username", "n"))
@@ -271,7 +328,6 @@ def edit_configuration():
     clear_cache = tanya_pengguna("Auto-clear app cache on launch/relaunch? [Y/n]", config_lama.get("auto_clear_cache", "y"))
     inject_scripts = tanya_pengguna("Inject scripts to 'autoexecute' folder? [y/N]", config_lama.get("inject_scripts", "n"))
 
-    # Menyimpan kembali dengan mempertahankan package yang sudah terdeteksi di Setup awal
     data_konfigurasi = {
         "package_mode": config_lama.get("package_mode", "1"),
         "selected_packages": config_lama.get("selected_packages", ""),
