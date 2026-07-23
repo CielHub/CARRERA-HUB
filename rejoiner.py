@@ -3,7 +3,8 @@ import time
 import json
 import subprocess
 import re
-import sys 
+import sys
+import threading
 from datetime import datetime
 
 try:
@@ -24,11 +25,30 @@ WARNA_KUNING = '\033[93m'
 WARNA_MERAH = '\033[91m'
 WARNA_RESET = '\033[0m'
 
+# --- THREADING & STATE GLOBALS ---
+stop_event = threading.Event()
+ocr_lock = threading.Lock()
+cookie_lock = threading.Lock()
 indeks_akun_aktif = 0
 
+# Dictionary untuk menyimpan status dan waktu mulai setiap package
+status_paket = {}
+waktu_mulai_dict = {}
+
 def bersihkan_layar():
-    # Menggunakan ANSI escape code: lebih kuat & bersih untuk Termux
     print('\033[2J\033[H', end='', flush=True)
+
+def jeda_interupsi(durasi):
+    """
+    Menggantikan time.sleep(). Memungkinkan Ctrl+C memotong jeda kapan saja.
+    Return True jika diinterupsi (stop_event set), False jika selesai normal.
+    """
+    waktu_mulai = time.time()
+    while time.time() - waktu_mulai < durasi:
+        if stop_event.is_set():
+            return True
+        time.sleep(0.5)
+    return False
 
 def tanya_pengguna(pertanyaan, nilai_default=None):
     if nilai_default is not None:
@@ -85,13 +105,11 @@ def sensor_cookie(cookie_teks):
     return cookie_teks
 
 def bersihkan_cache(nama_paket, silent=False):
-    if not silent: cetak_info(f"Mencoba membersihkan cache untuk {nama_paket}...")
     path_cache = f"/storage/emulated/0/Android/data/{nama_paket}/cache/*"
     try:
         subprocess.run(f"su -c 'rm -rf {path_cache}'", shell=True, stderr=subprocess.DEVNULL)
-        if not silent: cetak_sukses(f"Cache untuk {nama_paket} berhasil dibersihkan.")
-    except Exception as e:
-        if not silent: cetak_error(f"Terjadi kesalahan saat menghapus cache: {e}")
+    except Exception:
+        pass
 
 def cek_roblox_berjalan(nama_paket):
     try:
@@ -101,68 +119,61 @@ def cek_roblox_berjalan(nama_paket):
         return False
 
 def tutup_roblox(nama_paket, silent=False):
-    if not silent: cetak_info(f"Menutup paksa {nama_paket} (Termasuk Delta Lite)...")
     subprocess.run(f"su -c 'am force-stop {nama_paket}'", shell=True, stderr=subprocess.DEVNULL)
-    time.sleep(2)
+    jeda_interupsi(2)
 
 def buka_roblox(nama_paket, url_server, silent=False):
-    if not silent: cetak_info(f"Membuka Roblox: {nama_paket}")
     perintah = f'su -c \'am start -a android.intent.action.VIEW -d "{url_server}"\''
     subprocess.run(perintah, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
 def ganti_akun_otomatis(nama_paket, silent=False):
     global indeks_akun_aktif
-    daftar_cookie = muat_cookie()
-    
-    if not daftar_cookie:
-        if not silent: cetak_error("Tidak ada Cookie di Menu 4. Rotasi akun dibatalkan.")
+    with cookie_lock: # Thread-safe lock
+        daftar_cookie = muat_cookie()
+        if not daftar_cookie:
+            return False
+            
+        indeks_akun_aktif += 1
+        if indeks_akun_aktif >= len(daftar_cookie):
+            indeks_akun_aktif = 0 
+            
+        cookie_baru = daftar_cookie[indeks_akun_aktif]
+        tutup_roblox(nama_paket, silent=True)
+        
+        path_prefs = f"/data/data/{nama_paket}/shared_prefs/{nama_paket}_preferences.xml"
+        path_temp = f"/storage/emulated/0/temp_prefs_{nama_paket}.xml"
+        
+        subprocess.run(f"su -c 'cp {path_prefs} {path_temp}'", shell=True, stderr=subprocess.DEVNULL)
+        if os.path.exists(path_temp):
+            try:
+                with open(path_temp, 'r', encoding='utf-8', errors='ignore') as f:
+                    isi_file = f.read()
+                isi_baru = re.sub(r'_\|WARNING:-DO-NOT-SHARE-THIS.*?<', f'{cookie_baru}<', isi_file)
+                with open(path_temp, 'w', encoding='utf-8') as f:
+                    f.write(isi_baru)
+                
+                subprocess.run(f"su -c 'cat {path_temp} > {path_prefs}'", shell=True)
+                os.remove(path_temp)
+                return True
+            except Exception:
+                return False
         return False
-        
-    indeks_akun_aktif += 1
-    if indeks_akun_aktif >= len(daftar_cookie):
-        indeks_akun_aktif = 0 
-        
-    cookie_baru = daftar_cookie[indeks_akun_aktif]
-    if not silent: cetak_info(f"Memulai Rotasi: Beralih ke Akun {indeks_akun_aktif + 1}...")
-    
-    tutup_roblox(nama_paket, silent=True)
-    
-    path_prefs = f"/data/data/{nama_paket}/shared_prefs/{nama_paket}_preferences.xml"
-    path_temp = "/storage/emulated/0/temp_roblox_prefs.xml"
-    
-    subprocess.run(f"su -c 'cp {path_prefs} {path_temp}'", shell=True, stderr=subprocess.DEVNULL)
-    
-    if os.path.exists(path_temp):
+
+def deteksi_error_layar(nama_paket):
+    with ocr_lock: # Mencegah 2 thread mengambil screenshot di saat bersamaan
+        path_gambar = f"/storage/emulated/0/kuro_screen_{nama_paket}.png"
+        subprocess.run(f"su -c 'screencap -p {path_gambar}'", shell=True, stderr=subprocess.DEVNULL)
+        if not os.path.exists(path_gambar): return False
         try:
-            with open(path_temp, 'r', encoding='utf-8', errors='ignore') as f:
-                isi_file = f.read()
-            isi_baru = re.sub(r'_\|WARNING:-DO-NOT-SHARE-THIS.*?<', f'{cookie_baru}<', isi_file)
-            with open(path_temp, 'w', encoding='utf-8') as f:
-                f.write(isi_baru)
-            
-            subprocess.run(f"su -c 'cat {path_temp} > {path_prefs}'", shell=True)
-            os.remove(path_temp)
-            
-            if not silent: cetak_sukses(f"Berhasil menyuntikkan Cookie untuk Akun {indeks_akun_aktif + 1}!")
-            return True
+            gambar = Image.open(path_gambar)
+            teks_di_layar = pytesseract.image_to_string(gambar).lower()
+            for kata in ["disconnected", "kicked", "error code", "lost connection", "reconnect", "banned"]:
+                if kata in teks_di_layar: return True 
+            return False
         except Exception:
             return False
-    return False
-
-def deteksi_error_layar():
-    path_gambar = "/storage/emulated/0/kuro_screen.png"
-    subprocess.run(f"su -c 'screencap -p {path_gambar}'", shell=True, stderr=subprocess.DEVNULL)
-    if not os.path.exists(path_gambar): return False
-    try:
-        gambar = Image.open(path_gambar)
-        teks_di_layar = pytesseract.image_to_string(gambar).lower()
-        for kata in ["disconnected", "kicked", "error code", "lost connection", "reconnect", "banned"]:
-            if kata in teks_di_layar: return True 
-        return False
-    except Exception:
-        return False
-    finally:
-        if os.path.exists(path_gambar): os.remove(path_gambar)
+        finally:
+            if os.path.exists(path_gambar): os.remove(path_gambar)
 
 def dapatkan_statistik_sistem():
     stats = {"ram_free": "N/A", "ram_pct": "N/A"}
@@ -176,15 +187,15 @@ def dapatkan_statistik_sistem():
         pass
     return stats
 
-# --- FUNGSI RENDER DASHBOARD ---
-def render_dashboard(sys_stat, app_stats):
+# --- MANAGER: RENDER DASHBOARD (HANYA MEMBACA STATE) ---
+def render_dashboard(sys_stat):
     bersihkan_layar()
     print(f"{WARNA_CYAN} _  __ _   _  ____   ___  ")
     print("| |/ /| | | ||  _ \\ / _ \\ ")
     print("| ' / | | | || |_) | | | |")
     print("| . \\ | |_| ||  _ <| |_| |")
     print(f"|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}")
-    print("v3.5.2\n")
+    print("v3.5.2 (Multi-Threaded)\n")
     
     mem_data = dapatkan_statistik_sistem()
     mem_stat = f"Free: {mem_data['ram_free']} ({mem_data['ram_pct']})"
@@ -194,28 +205,23 @@ def render_dashboard(sys_stat, app_stats):
     print(garis_batas)
     print(f"{WARNA_CYAN}|{WARNA_RESET} {'PACKAGE':<18} {WARNA_CYAN}|{WARNA_RESET} {'STATUS':<23} {WARNA_CYAN}|{WARNA_RESET}")
     print(garis_batas)
-    
     print(f"{WARNA_CYAN}|{WARNA_RESET} {'System':<18} {WARNA_CYAN}|{WARNA_RESET} {sys_stat:<23} {WARNA_CYAN}|{WARNA_RESET}")
     print(f"{WARNA_CYAN}|{WARNA_RESET} {'Memory':<18} {WARNA_CYAN}|{WARNA_RESET} {mem_stat:<23} {WARNA_CYAN}|{WARNA_RESET}")
     print(f"{WARNA_CYAN}+{'-'*20}+{'-'*25}+{WARNA_RESET}")
     
-    for pkg, stat in app_stats.items():
+    # Loop seluruh state yang diperbarui oleh Worker Threads
+    for pkg, stat in status_paket.items():
         nama_pkg = pkg if len(pkg) <= 18 else f"{pkg[:15]}..."
         print(f"{WARNA_CYAN}|{WARNA_RESET} {nama_pkg:<18} {WARNA_CYAN}|{WARNA_RESET} {stat:<23} {WARNA_CYAN}|{WARNA_RESET}")
     print(garis_batas)
     print("\nTekan CTRL+C untuk berhenti dan kembali ke menu.")
 
-# --- MESIN UTAMA ---
-def mesin_utama_rejoiner(config):
-    paket_target = config.get("selected_packages", "")
+# --- WORKER: LOGIKA INDEPENDEN UNTUK SETIAP PACKAGE ---
+def thread_pekerja_paket(pkg, config, jeda_awal):
     url_global = config.get("global_url", "")
     auto_rotate_aktif = config.get("auto_account_rotation", "n").lower() == 'y'
+    fitur_clear_cache = config.get("auto_clear_cache", "y").lower() == 'y'
     
-    if not paket_target or paket_target == "none" or not url_global:
-        cetak_error("Paket aplikasi belum diatur. Silakan jalankan Menu 1 kembali.")
-        time.sleep(2)
-        return
-
     try:
         delay_launch = int(config.get("delay_launch", 40))
         delay_relaunch = int(config.get("delay_relaunch", 40))
@@ -226,97 +232,127 @@ def mesin_utama_rejoiner(config):
         delay_relaunch = 40
         hop_waktu = 0
 
-    fitur_clear_cache = config.get("auto_clear_cache", "y").lower() == 'y'
+    # 1. Start Delay (Staggering antar aplikasi)
+    status_paket[pkg] = "Waiting in Queue..."
+    if jeda_interupsi(jeda_awal): return
+
+    # 2. Initial Launch Sequence
+    if fitur_clear_cache:
+        status_paket[pkg] = "Clearing Cache..."
+        bersihkan_cache(pkg, silent=True)
     
-    # Memisahkan paket jika menjalankan multi-akun
+    status_paket[pkg] = "Launching..."
+    buka_roblox(pkg, url_global, silent=True)
+    waktu_mulai_dict[pkg] = time.time()
+    
+    # Menunggu delay awal masuk game
+    for i in range(delay_launch, 0, -1):
+        status_paket[pkg] = f"Launch Delay: {i}s"
+        if jeda_interupsi(1): return
+    
+    status_paket[pkg] = "Launched"
+
+    # 3. Monitoring Loop (Independent)
+    while not stop_event.is_set():
+        is_running = cek_roblox_berjalan(pkg)
+        
+        if is_running:
+            status_paket[pkg] = "Running (Online)"
+            
+            # Cek Error/Disconnect via OCR
+            if deteksi_error_layar(pkg):
+                status_paket[pkg] = "Error/Banned!"
+                if auto_rotate_aktif:
+                    status_paket[pkg] = "Rotating Account..."
+                    ganti_akun_otomatis(pkg, silent=True)
+                else:
+                    tutup_roblox(pkg, silent=True)
+                
+                # Relaunch Sequence
+                for i in range(delay_relaunch, 0, -1):
+                    status_paket[pkg] = f"Relaunch: {i}s"
+                    if jeda_interupsi(1): return
+                
+                if fitur_clear_cache: bersihkan_cache(pkg, silent=True)
+                buka_roblox(pkg, url_global, silent=True)
+                waktu_mulai_dict[pkg] = time.time()
+                continue
+            
+            # Cek Server Hop
+            if hop_waktu > 0:
+                waktu_berjalan = time.time() - waktu_mulai_dict.get(pkg, time.time())
+                if waktu_berjalan >= hop_waktu:
+                    status_paket[pkg] = "Server Hop..."
+                    tutup_roblox(pkg, silent=True)
+                    if jeda_interupsi(2): return
+                    
+                    if fitur_clear_cache: bersihkan_cache(pkg, silent=True)
+                    buka_roblox(pkg, url_global, silent=True)
+                    waktu_mulai_dict[pkg] = time.time()
+                    continue
+        else:
+            status_paket[pkg] = "Offline/Crashed!"
+            if auto_rotate_aktif:
+                ganti_akun_otomatis(pkg, silent=True)
+                
+            for i in range(delay_relaunch, 0, -1):
+                status_paket[pkg] = f"Relaunch: {i}s"
+                if jeda_interupsi(1): return
+                
+            if fitur_clear_cache: bersihkan_cache(pkg, silent=True)
+            buka_roblox(pkg, url_global, silent=True)
+            waktu_mulai_dict[pkg] = time.time()
+
+        # Istirahat 5 detik sebelum cek lagi agar CPU tidak meledak
+        if jeda_interupsi(5): return
+
+# --- MANAGER: INISIALISASI DAN PENGENDALIAN THREAD ---
+def mesin_utama_rejoiner(config):
+    global status_paket, waktu_mulai_dict
+    stop_event.clear() # Reset sinyal stop setiap kali mesin dijalankan
+    
+    paket_target = config.get("selected_packages", "")
+    url_global = config.get("global_url", "")
+    
+    if not paket_target or paket_target == "none" or not url_global:
+        cetak_error("Paket aplikasi belum diatur. Silakan jalankan Menu 1 kembali.")
+        time.sleep(2)
+        return
+
     daftar_paket_aktif = [p.strip() for p in paket_target.split(",") if p.strip()]
     
-    app_stats = {p: "Idle" for p in daftar_paket_aktif}
+    # Inisialisasi State di awal agar Dashboard langsung membaca semuanya
+    status_paket = {p: "Idle" for p in daftar_paket_aktif}
     waktu_mulai_dict = {}
-
+    
+    threads = []
+    
     try:
-        sys_stat = "Optimizing (1)"
-        render_dashboard(sys_stat, app_stats)
-        time.sleep(1)
-        
-        sys_stat = "Boosting"
-        for p in daftar_paket_aktif: app_stats[p] = "Keep-Alive"
-        render_dashboard(sys_stat, app_stats)
-        time.sleep(1)
-        
-        sys_stat = "Resetting apps"
-        for p in daftar_paket_aktif: 
-            app_stats[p] = "Resetting"
-            if fitur_clear_cache: bersihkan_cache(p, silent=True)
-        render_dashboard(sys_stat, app_stats)
-        time.sleep(1)
-        
-        sys_stat = "Ready"
-        for p in daftar_paket_aktif: app_stats[p] = "Apps Ready"
-        render_dashboard(sys_stat, app_stats)
-        time.sleep(1)
-        
-        for i in range(delay_launch, 0, -1):
-            for p in daftar_paket_aktif: app_stats[p] = f"Launch Delay: {i}s"
-            render_dashboard(sys_stat, app_stats)
-            time.sleep(1)
+        # Memulai Thread Pekerja untuk setiap package
+        for i, pkg in enumerate(daftar_paket_aktif):
+            # Jeda antar peluncuran aplikasi (misal app 1 = 0s, app 2 = 5s, app 3 = 10s)
+            jeda_stagger = i * 5 
+            t = threading.Thread(target=thread_pekerja_paket, args=(pkg, config, jeda_stagger))
+            t.daemon = True # Agar thread otomatis mati jika program utama mati
+            t.start()
+            threads.append(t)
             
-        for p in daftar_paket_aktif:
-            app_stats[p] = "Launching"
-            render_dashboard(sys_stat, app_stats)
-            buka_roblox(p, url_global, silent=True)
-            waktu_mulai_dict[p] = time.time()
-            time.sleep(3)
-            app_stats[p] = "Launched"
-            
-        render_dashboard(sys_stat, app_stats)
-        
-        while True:
-            for p in daftar_paket_aktif:
-                if cek_roblox_berjalan(p):
-                    app_stats[p] = "Running (Online)"
-                    if deteksi_error_layar():
-                        app_stats[p] = "Error Detected!"
-                        render_dashboard(sys_stat, app_stats)
-                        if auto_rotate_aktif: ganti_akun_otomatis(p, silent=True)
-                        else: tutup_roblox(p, silent=True)
-                        for i in range(delay_relaunch, 0, -1):
-                            app_stats[p] = f"Relaunch: {i}s"
-                            render_dashboard(sys_stat, app_stats)
-                            time.sleep(1)
-                        if fitur_clear_cache: bersihkan_cache(p, silent=True)
-                        buka_roblox(p, url_global, silent=True)
-                        waktu_mulai_dict[p] = time.time()
-                        app_stats[p] = "Launched"
-                    
-                    elif hop_waktu > 0:
-                        if time.time() - waktu_mulai_dict.get(p, time.time()) >= hop_waktu:
-                            app_stats[p] = "Server Hop..."
-                            render_dashboard(sys_stat, app_stats)
-                            tutup_roblox(p, silent=True)
-                            time.sleep(2)
-                            if fitur_clear_cache: bersihkan_cache(p, silent=True)
-                            buka_roblox(p, url_global, silent=True)
-                            waktu_mulai_dict[p] = time.time()
-                            app_stats[p] = "Launched"
-                else:
-                    app_stats[p] = "Offline/Crashed!"
-                    render_dashboard(sys_stat, app_stats)
-                    if auto_rotate_aktif: ganti_akun_otomatis(p, silent=True)
-                    for i in range(delay_relaunch, 0, -1):
-                        app_stats[p] = f"Relaunch: {i}s"
-                        render_dashboard(sys_stat, app_stats)
-                        time.sleep(1)
-                    if fitur_clear_cache: bersihkan_cache(p, silent=True)
-                    buka_roblox(p, url_global, silent=True)
-                    waktu_mulai_dict[p] = time.time()
-                    app_stats[p] = "Launched"
-                    
-            render_dashboard(sys_stat, app_stats)
-            time.sleep(2)
-
+        # Manager Loop (Hanya render dashboard secara konstan)
+        sys_stat = "Monitoring Active"
+        while not stop_event.is_set():
+            render_dashboard(sys_stat)
+            # Dashboard diupdate setiap 1.5 detik
+            if jeda_interupsi(1.5):
+                break
+                
     except KeyboardInterrupt:
-        return
+        # Diabaikan di sini karena ditangkap oleh proteksi global di bawah
+        pass
+    finally:
+        # Jika loop terhenti (Ctrl+C), pastikan sinyal stop dikirim ke semua thread
+        stop_event.set()
+        render_dashboard("Shutting down threads...")
+        time.sleep(1) # Beri waktu sejenak agar thread mati dengan aman
 
 def setup_configuration():
     bersihkan_layar()
@@ -346,7 +382,6 @@ def setup_configuration():
             
             pilihan_indeks = tanya_pengguna("Select", "all")
             
-            # --- PARSING KOMA (1,2) DAN ALL ---
             if pilihan_indeks.lower() == 'all':
                 paket_dipilih = ",".join(paket_ditemukan)
                 cetak_sukses(f"Selected ALL packages:\n{paket_dipilih}")
@@ -415,12 +450,12 @@ def tampilkan_menu():
     print("| ' / | | | || |_) | | | |")
     print("| . \\ | |_| ||  _ <| |_| |")
     print(f"|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}")
-    print("Version 3.5.2")
+    print("Version 3.5.2 (Multi-Thread)")
     print("-" * 60)
     print("What would you like to do?")
     print("  1) Setup Configuration (First Run)")
     print("  2) Edit Configuration (WIP)")
-    print("  3) Run Script (Launch apps + optimizations)")
+    print("  3) Run Script (Multi-Package Dashboard)")
     print("  4) Cookie Management")
     print("  5) Clear All App Caches")
     print("  9) Exit\n")
@@ -440,7 +475,9 @@ def main():
                 continue
             mesin_utama_rejoiner(config)
             print(f"\n{WARNA_KUNING}[i] Kembali ke menu utama...{WARNA_RESET}")
-            time.sleep(1.5)
+            time.sleep(1)
+        elif pilihan == '4':
+            manajemen_cookie()
         elif pilihan == '5':
             config = muat_konfigurasi()
             if config:
@@ -457,5 +494,6 @@ if __name__ == "__main__":
         main()
         print(f"\n{WARNA_HIJAU}Program selesai. Sampai jumpa!{WARNA_RESET}")
     except KeyboardInterrupt:
-        print(f"\n\n{WARNA_MERAH}[!] Program dihentikan paksa (Ctrl+C). Keluar...{WARNA_RESET}")
+        stop_event.set()
+        print(f"\n\n{WARNA_MERAH}[!] Program dihentikan paksa (Ctrl+C). Keluar dengan aman...{WARNA_RESET}")
         sys.exit(0)
