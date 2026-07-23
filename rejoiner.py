@@ -41,32 +41,42 @@ def prosesor_antrean():
     """Kasir: Satu-satunya thread yang mengeksekusi perintah shell Android."""
     while not stop_event.is_set():
         try:
-            # Block selama 1 detik menunggu pesanan masuk
             tugas = antrean_perintah.get(timeout=1)
         except queue.Empty:
             continue
             
         perintah = tugas['perintah']
+        tunggu_output = tugas['tunggu']
+        
         try:
-            # Eksekusi dengan aman (satu per satu)
-            hasil = subprocess.run(perintah, shell=True, capture_output=True, text=True, stderr=subprocess.DEVNULL)
-            tugas['hasil'] = hasil
-        except Exception as e:
+            # Jika butuh output (seperti cek proses berjalan), kita tangkap hasilnya
+            if tunggu_output:
+                hasil = subprocess.run(perintah, shell=True, capture_output=True, text=True, stderr=subprocess.DEVNULL)
+                tugas['hasil'] = hasil
+            else:
+                # Eksekusi lepas tangan (seperti buka aplikasi) agar tidak macet
+                subprocess.Popen(perintah, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+                tugas['hasil'] = None
+        except Exception:
             tugas['hasil'] = None
             
-        tugas['selesai'].set() # Kirim sinyal bahwa pesanan selesai
+        tugas['selesai'].set()
         antrean_perintah.task_done()
 
-def eksekusi_aman(perintah_shell):
+def eksekusi_aman(perintah_shell, tunggu=True):
     """Pelanggan: Fungsi untuk menitipkan perintah ke Kasir."""
     tugas = {
         'perintah': perintah_shell,
+        'tunggu': tunggu,
         'selesai': threading.Event(),
         'hasil': None
     }
     antrean_perintah.put(tugas)
-    tugas['selesai'].wait() # Menunggu Kasir selesai memproses
-    return tugas['hasil']
+    
+    if tunggu:
+        tugas['selesai'].wait() 
+        return tugas['hasil']
+    return None
 
 # --- FUNGSI BANTUAN DASAR ---
 def bersihkan_layar_total():
@@ -88,9 +98,8 @@ def tanya_pengguna(pertanyaan, nilai_default=None):
     jawaban = input(teks_prompt).strip()
     return nilai_default if (jawaban == "" and nilai_default is not None) else jawaban
 
-def cetak_info(teks): print(f"{WARNA_KUNING}[i]{WARNA_RESET} {teks}")
-def cetak_sukses(teks): print(f"{WARNA_HIJAU}[+]{WARNA_RESET} {teks}")
 def cetak_error(teks): print(f"{WARNA_MERAH}[!]{WARNA_RESET} {teks}")
+def cetak_sukses(teks): print(f"{WARNA_HIJAU}[+]{WARNA_RESET} {teks}")
 
 def deteksi_paket_roblox():
     try:
@@ -112,23 +121,21 @@ def muat_cookie():
 # --- KOMPONEN WORKER (MENGGUNAKAN EKSEKUSI AMAN) ---
 def bersihkan_cache(nama_paket):
     path_cache = f"/storage/emulated/0/Android/data/{nama_paket}/cache/*"
-    eksekusi_aman(f"su -c 'rm -rf {path_cache}'")
+    eksekusi_aman(f"su -c 'rm -rf {path_cache}'", tunggu=False)
 
 def cek_roblox_berjalan(nama_paket):
-    hasil = eksekusi_aman(f"ps -ef | grep {nama_paket} | grep -v grep")
+    hasil = eksekusi_aman(f"ps -ef | grep {nama_paket} | grep -v grep", tunggu=True)
     if hasil and hasil.stdout:
         return nama_paket in hasil.stdout
     return False
 
 def tutup_roblox(nama_paket):
-    eksekusi_aman(f"su -c 'am force-stop {nama_paket}'")
+    eksekusi_aman(f"su -c 'am force-stop {nama_paket}'", tunggu=False)
     jeda_interupsi(2)
 
-def buka_aplikasi_dasar(nama_paket):
-    eksekusi_aman(f"su -c 'monkey -p {nama_paket} -c android.intent.category.LAUNCHER 1'")
-
-def buka_private_server(url_server):
-    eksekusi_aman(f'su -c \'am start -a android.intent.action.VIEW -d "{url_server}"\'')
+def buka_roblox(nama_paket, url_server):
+    # Kembali ke "Cara 1" yang langsung menembak URL (Tanpa perlu ditunggu Kasir)
+    eksekusi_aman(f'su -c \'am start -a android.intent.action.VIEW -d "{url_server}"\'', tunggu=False)
 
 def ganti_akun_otomatis(nama_paket):
     global indeks_akun_aktif
@@ -145,7 +152,7 @@ def ganti_akun_otomatis(nama_paket):
         path_prefs = f"/data/data/{nama_paket}/shared_prefs/{nama_paket}_preferences.xml"
         path_temp = f"/storage/emulated/0/temp_prefs_{nama_paket}.xml"
         
-        eksekusi_aman(f"su -c 'cp {path_prefs} {path_temp}'")
+        eksekusi_aman(f"su -c 'cp {path_prefs} {path_temp}'", tunggu=True)
         if os.path.exists(path_temp):
             try:
                 with open(path_temp, 'r', encoding='utf-8', errors='ignore') as f:
@@ -153,7 +160,7 @@ def ganti_akun_otomatis(nama_paket):
                 with open(path_temp, 'w', encoding='utf-8') as f:
                     f.write(isi_baru)
                 
-                eksekusi_aman(f"su -c 'cat {path_temp} > {path_prefs}'")
+                eksekusi_aman(f"su -c 'cat {path_temp} > {path_prefs}'", tunggu=True)
                 os.remove(path_temp)
                 return True
             except Exception:
@@ -162,7 +169,7 @@ def ganti_akun_otomatis(nama_paket):
 
 def deteksi_error_layar(nama_paket):
     path_gambar = f"/storage/emulated/0/kuro_screen_{nama_paket}.png"
-    eksekusi_aman(f"su -c 'screencap -p {path_gambar}'") # Screenshot via antrean
+    eksekusi_aman(f"su -c 'screencap -p {path_gambar}'", tunggu=True) 
     
     if not os.path.exists(path_gambar): return False
     try:
@@ -177,18 +184,15 @@ def deteksi_error_layar(nama_paket):
         if os.path.exists(path_gambar): os.remove(path_gambar)
 
 # --- KOMPONEN DASHBOARD (BUFFERED RENDERING) ---
-def dapatkan_statistik_sistem():
-    stats = {"ram_free": "N/A", "ram_pct": "N/A", "cpu": "N/A"}
+def dapatkan_statistik_ram():
+    # Menghapus pengecekan CPU yang berat, fokus ke RAM saja
+    stats = {"ram_free": "N/A", "ram_pct": "N/A"}
     try:
         meminfo = subprocess.check_output("cat /proc/meminfo", shell=True, text=True)
         mem_total = int(re.search(r"MemTotal:\s+(\d+)", meminfo).group(1))
         mem_free = int(re.search(r"MemAvailable:\s+(\d+)", meminfo).group(1))
         stats["ram_free"] = f"{mem_free // 1024}MB"
         stats["ram_pct"] = f"{int((mem_total - mem_free) / mem_total * 100)}%"
-        
-        top_out = subprocess.check_output("top -n 1 -b | head -n 5", shell=True, text=True)
-        cpu_m = re.search(r"(\d+)%cpu", top_out, re.IGNORECASE)
-        if cpu_m: stats["cpu"] = f"{cpu_m.group(1)}%"
     except Exception:
         pass
     return stats
@@ -196,25 +200,23 @@ def dapatkan_statistik_sistem():
 def thread_dashboard():
     bersihkan_layar_total()
     while not stop_event.is_set():
-        sys_stats = dapatkan_statistik_sistem()
+        sys_stats = dapatkan_statistik_ram()
         mem_teks = f"Free: {sys_stats.get('ram_free')} ({sys_stats.get('ram_pct')})"
-        cpu_teks = f"CPU Load: {sys_stats.get('cpu')}"
         
         garis_batas = f"{WARNA_CYAN}+{'-'*16}+{'-'*25}+{WARNA_RESET}\n"
-        buffer_layar = '\033[H' # Pindah kursor ke atas
+        buffer_layar = '\033[H' 
         
         buffer_layar += f"{WARNA_CYAN} _  __ _   _  ____   ___  \n"
         buffer_layar += f"| |/ /| | | ||  _ \\ / _ \\ \n"
         buffer_layar += f"| ' / | | | || |_) | | | |\n"
         buffer_layar += f"| . \\ | |_| ||  _ <| |_| |\n"
         buffer_layar += f"|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}\n"
-        buffer_layar += "v4.2 (Queued & Buffered)\n\n"
+        buffer_layar += "v4.3 (Fast Queue & Buffered)\n\n"
         
         buffer_layar += garis_batas
         buffer_layar += f"{WARNA_CYAN}|{WARNA_RESET} {'PACKAGE':<14} {WARNA_CYAN}|{WARNA_RESET} {'STATUS':<23} {WARNA_CYAN}|{WARNA_RESET}\n"
         buffer_layar += garis_batas
         buffer_layar += f"{WARNA_CYAN}|{WARNA_RESET} {'System Memory':<14} {WARNA_CYAN}|{WARNA_RESET} {mem_teks:<23} {WARNA_CYAN}|{WARNA_RESET}\n"
-        buffer_layar += f"{WARNA_CYAN}|{WARNA_RESET} {'System CPU':<14} {WARNA_CYAN}|{WARNA_RESET} {cpu_teks:<23} {WARNA_CYAN}|{WARNA_RESET}\n"
         buffer_layar += garis_batas
         
         for pkg, stat in status_paket.items():
@@ -224,11 +226,11 @@ def thread_dashboard():
             
         buffer_layar += garis_batas
         buffer_layar += "\nTekan CTRL+C untuk menghentikan semua proses.\n"
-        buffer_layar += '\033[J' # Hapus sisa baris di bawah
+        buffer_layar += '\033[J' 
         
         sys.stdout.write(buffer_layar)
         sys.stdout.flush()
-        jeda_interupsi(1)
+        jeda_interupsi(1.5) # Sedikit diperlambat agar lebih stabil
 
 # --- KOMPONEN WORKER (ALUR APLIKASI & RECOVERY) ---
 def thread_pekerja_paket(pkg, config, jeda_awal):
@@ -245,19 +247,15 @@ def thread_pekerja_paket(pkg, config, jeda_awal):
         status_paket[pkg] = "Preparing..."
         if fitur_clear_cache: bersihkan_cache(pkg)
             
-        status_paket[pkg] = "Launch Roblox..."
-        buka_aplikasi_dasar(pkg)
+        # Menggunakan "Cara 1" Langsung tembak URL
+        status_paket[pkg] = "Launch & Join..."
+        buka_roblox(pkg, url_global)
+        waktu_mulai_dict[pkg] = time.time()
         
+        # Menunggu proses loading aplikasi
         for i in range(delay_launch, 0, -1):
             status_paket[pkg] = f"Wait Process: {i}s"
             if jeda_interupsi(1): return
-            
-        status_paket[pkg] = "Open Private Server..."
-        buka_private_server(url_global)
-        
-        status_paket[pkg] = "Joining Server..."
-        if jeda_interupsi(15): return 
-        waktu_mulai_dict[pkg] = time.time()
         
         dalam_sesi = True
         while dalam_sesi and not stop_event.is_set():
@@ -285,19 +283,13 @@ def thread_pekerja_paket(pkg, config, jeda_awal):
                     status_paket[pkg] = "Clear Cache..."
                     bersihkan_cache(pkg)
                     
-                status_paket[pkg] = "Launch Roblox..."
-                buka_aplikasi_dasar(pkg)
+                status_paket[pkg] = "Launch & Join..."
+                buka_roblox(pkg, url_global)
+                waktu_mulai_dict[pkg] = time.time()
                 
                 for i in range(delay_launch, 0, -1):
                     status_paket[pkg] = f"Recovery Wait: {i}s"
                     if jeda_interupsi(1): return
-                    
-                status_paket[pkg] = "Open Private Server..."
-                buka_private_server(url_global)
-                
-                status_paket[pkg] = "Joining Server..."
-                waktu_mulai_dict[pkg] = time.time()
-                if jeda_interupsi(15): return 
                 continue
 
             if jeda_interupsi(5): return
@@ -319,21 +311,19 @@ def mesin_utama_rejoiner(config):
     threads = []
     
     try:
-        # Spawn Thread Kasir
         t_kasir = threading.Thread(target=prosesor_antrean)
         t_kasir.daemon = True
         t_kasir.start()
         threads.append(t_kasir)
 
-        # Spawn Thread Dashboard
         t_dash = threading.Thread(target=thread_dashboard)
         t_dash.daemon = True
         t_dash.start()
         threads.append(t_dash)
 
-        # Spawn Thread Worker
         for i, pkg in enumerate(daftar_paket_aktif):
-            jeda_stagger = i * 15 
+            # Memberikan jeda 10 detik antar aplikasi agar HP tidak kaget
+            jeda_stagger = i * 10 
             t = threading.Thread(target=thread_pekerja_paket, args=(pkg, config, jeda_stagger))
             t.daemon = True
             t.start()
@@ -346,7 +336,6 @@ def mesin_utama_rejoiner(config):
         pass
     finally:
         stop_event.set()
-        # Kuras antrean agar thread kasir cepat mati
         while not antrean_perintah.empty():
             try:
                 antrean_perintah.get_nowait()
@@ -377,7 +366,7 @@ def setup_configuration():
                 paket_dipilih = paket_ditemukan[int(pilihan) - 1]
     
     url_global = tanya_pengguna("Global Private Server URL")
-    delay_launch = tanya_pengguna("Wait Process Delay (seconds)", "20")
+    delay_launch = tanya_pengguna("Wait Process Delay (seconds)", "40")
     server_hop = tanya_pengguna("Server Hop Interval (seconds)", "0")
     auto_rotate = tanya_pengguna("Enable Auto Account Rotation? [y/N]", "n")
     clear_cache = tanya_pengguna("Auto-clear cache? [Y/n]", "y")
@@ -400,7 +389,7 @@ def tampilkan_menu():
     print("| ' / | | | || |_) | | | |")
     print("| . \\ | |_| ||  _ <| |_| |")
     print(f"|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}")
-    print("Version 4.2.0 (Queued & Buffered)")
+    print("Version 4.3 (Fast Queue & Buffered)")
     print("-" * 60)
     print("  1) Setup Configuration")
     print("  3) Run Script (Multi-Package Dashboard)")
