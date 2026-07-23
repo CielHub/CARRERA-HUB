@@ -34,11 +34,11 @@ indeks_akun_aktif = 0
 status_paket = {}
 waktu_mulai_dict = {}
 
-# --- SISTEM ANTREAN (QUEUE) ---
+# --- SISTEM ANTREAN (KASIR) ---
 antrean_perintah = queue.Queue()
 
 def prosesor_antrean():
-    """Kasir: Satu-satunya thread yang mengeksekusi perintah shell Android."""
+    """Satu-satunya thread yang mengeksekusi shell."""
     while not stop_event.is_set():
         try:
             tugas = antrean_perintah.get(timeout=1)
@@ -46,9 +46,8 @@ def prosesor_antrean():
             continue
             
         perintah = tugas['perintah']
-        
         try:
-            # Diperbaiki: Selalu tunggu sampai perintah selesai 100% (Mencegah aplikasi buka-tutup balapan)
+            # Synchronous Execution (Nunggu sampai selesai biar gak balapan)
             hasil = subprocess.run(perintah, shell=True, capture_output=True, text=True, stderr=subprocess.DEVNULL)
             tugas['hasil'] = hasil
         except Exception:
@@ -58,7 +57,7 @@ def prosesor_antrean():
         antrean_perintah.task_done()
 
 def eksekusi_aman(perintah_shell):
-    """Pelanggan: Fungsi untuk menitipkan perintah ke Kasir dan menunggu selesai."""
+    """Fungsi pelanggan untuk naruh orderan ke Kasir."""
     tugas = {
         'perintah': perintah_shell,
         'selesai': threading.Event(),
@@ -108,13 +107,15 @@ def muat_cookie():
         with open(FILE_COOKIE, 'r') as file: return json.load(file)
     return []
 
-# --- KOMPONEN WORKER (MENGGUNAKAN EKSEKUSI AMAN) ---
+# --- KOMPONEN WORKER (PERINTAH AMAN) ---
 def bersihkan_cache(nama_paket):
     path_cache = f"/storage/emulated/0/Android/data/{nama_paket}/cache/*"
     eksekusi_aman(f"su -c 'rm -rf {path_cache}'")
 
 def cek_roblox_berjalan(nama_paket):
-    hasil = eksekusi_aman(f"ps -ef | grep {nama_paket} | grep -v grep")
+    hasil = eksekusi_aman(f"su -c 'ps -ef | grep {nama_paket} | grep -v grep'")
+    if not hasil or not hasil.stdout.strip():
+        hasil = eksekusi_aman(f"su -c 'ps | grep {nama_paket} | grep -v grep'")
     if hasil and hasil.stdout:
         return nama_paket in hasil.stdout
     return False
@@ -124,7 +125,10 @@ def tutup_roblox(nama_paket):
     jeda_interupsi(2)
 
 def buka_roblox(nama_paket, url_server):
-    eksekusi_aman(f'su -c \'am start -a android.intent.action.VIEW -d "{url_server}"\'')
+    """Perbaikan Fatal: Monkey -> Jeda -> Deep Link by Package"""
+    eksekusi_aman(f"su -c 'monkey -p {nama_paket} -c android.intent.category.LAUNCHER 1'")
+    jeda_interupsi(4)
+    eksekusi_aman(f"su -c 'am start -p {nama_paket} -a android.intent.action.VIEW -d \"{url_server}\"'")
 
 def ganti_akun_otomatis(nama_paket):
     global indeks_akun_aktif
@@ -172,7 +176,7 @@ def deteksi_error_layar(nama_paket):
     finally:
         if os.path.exists(path_gambar): os.remove(path_gambar)
 
-# --- KOMPONEN DASHBOARD (BUFFERED RENDERING) ---
+# --- KOMPONEN DASHBOARD ---
 def dapatkan_statistik_ram():
     stats = {"ram_free": "N/A", "ram_pct": "N/A"}
     try:
@@ -199,7 +203,7 @@ def thread_dashboard():
         buffer_layar += f"| ' / | | | || |_) | | | |\n"
         buffer_layar += f"| . \\ | |_| ||  _ <| |_| |\n"
         buffer_layar += f"|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}\n"
-        buffer_layar += "v4.4 (Stable Synchronous Queue)\n\n"
+        buffer_layar += "v4.5 (Fixed Launch Logic)\n\n"
         
         buffer_layar += garis_batas
         buffer_layar += f"{WARNA_CYAN}|{WARNA_RESET} {'PACKAGE':<14} {WARNA_CYAN}|{WARNA_RESET} {'STATUS':<23} {WARNA_CYAN}|{WARNA_RESET}\n"
@@ -220,7 +224,7 @@ def thread_dashboard():
         sys.stdout.flush()
         jeda_interupsi(1.5) 
 
-# --- KOMPONEN WORKER (ALUR APLIKASI & RECOVERY) ---
+# --- ALUR KERJA (WORKER) ---
 def thread_pekerja_paket(pkg, config, jeda_awal):
     url_global = config.get("global_url", "")
     auto_rotate = config.get("auto_account_rotation", "n").lower() == 'y'
@@ -308,7 +312,7 @@ def mesin_utama_rejoiner(config):
         threads.append(t_dash)
 
         for i, pkg in enumerate(daftar_paket_aktif):
-            jeda_stagger = i * 15 # Jeda 15s per app
+            jeda_stagger = i * 15 # Antrean aman 15 detik biar CPU lega
             t = threading.Thread(target=thread_pekerja_paket, args=(pkg, config, jeda_stagger))
             t.daemon = True
             t.start()
@@ -374,7 +378,7 @@ def tampilkan_menu():
     print("| ' / | | | || |_) | | | |")
     print("| . \\ | |_| ||  _ <| |_| |")
     print(f"|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}")
-    print("Version 4.4 (Stable Synchronous Queue)")
+    print("Version 4.5 (Fixed Launch Logic)")
     print("-" * 60)
     print("  1) Setup Configuration")
     print("  3) Run Script (Multi-Package Dashboard)")
