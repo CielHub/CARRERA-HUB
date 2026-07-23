@@ -46,37 +46,27 @@ def prosesor_antrean():
             continue
             
         perintah = tugas['perintah']
-        tunggu_output = tugas['tunggu']
         
         try:
-            # Jika butuh output (seperti cek proses berjalan), kita tangkap hasilnya
-            if tunggu_output:
-                hasil = subprocess.run(perintah, shell=True, capture_output=True, text=True, stderr=subprocess.DEVNULL)
-                tugas['hasil'] = hasil
-            else:
-                # Eksekusi lepas tangan (seperti buka aplikasi) agar tidak macet
-                subprocess.Popen(perintah, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-                tugas['hasil'] = None
+            # Diperbaiki: Selalu tunggu sampai perintah selesai 100% (Mencegah aplikasi buka-tutup balapan)
+            hasil = subprocess.run(perintah, shell=True, capture_output=True, text=True, stderr=subprocess.DEVNULL)
+            tugas['hasil'] = hasil
         except Exception:
             tugas['hasil'] = None
             
         tugas['selesai'].set()
         antrean_perintah.task_done()
 
-def eksekusi_aman(perintah_shell, tunggu=True):
-    """Pelanggan: Fungsi untuk menitipkan perintah ke Kasir."""
+def eksekusi_aman(perintah_shell):
+    """Pelanggan: Fungsi untuk menitipkan perintah ke Kasir dan menunggu selesai."""
     tugas = {
         'perintah': perintah_shell,
-        'tunggu': tunggu,
         'selesai': threading.Event(),
         'hasil': None
     }
     antrean_perintah.put(tugas)
-    
-    if tunggu:
-        tugas['selesai'].wait() 
-        return tugas['hasil']
-    return None
+    tugas['selesai'].wait() 
+    return tugas['hasil']
 
 # --- FUNGSI BANTUAN DASAR ---
 def bersihkan_layar_total():
@@ -121,21 +111,20 @@ def muat_cookie():
 # --- KOMPONEN WORKER (MENGGUNAKAN EKSEKUSI AMAN) ---
 def bersihkan_cache(nama_paket):
     path_cache = f"/storage/emulated/0/Android/data/{nama_paket}/cache/*"
-    eksekusi_aman(f"su -c 'rm -rf {path_cache}'", tunggu=False)
+    eksekusi_aman(f"su -c 'rm -rf {path_cache}'")
 
 def cek_roblox_berjalan(nama_paket):
-    hasil = eksekusi_aman(f"ps -ef | grep {nama_paket} | grep -v grep", tunggu=True)
+    hasil = eksekusi_aman(f"ps -ef | grep {nama_paket} | grep -v grep")
     if hasil and hasil.stdout:
         return nama_paket in hasil.stdout
     return False
 
 def tutup_roblox(nama_paket):
-    eksekusi_aman(f"su -c 'am force-stop {nama_paket}'", tunggu=False)
+    eksekusi_aman(f"su -c 'am force-stop {nama_paket}'")
     jeda_interupsi(2)
 
 def buka_roblox(nama_paket, url_server):
-    # Kembali ke "Cara 1" yang langsung menembak URL (Tanpa perlu ditunggu Kasir)
-    eksekusi_aman(f'su -c \'am start -a android.intent.action.VIEW -d "{url_server}"\'', tunggu=False)
+    eksekusi_aman(f'su -c \'am start -a android.intent.action.VIEW -d "{url_server}"\'')
 
 def ganti_akun_otomatis(nama_paket):
     global indeks_akun_aktif
@@ -152,7 +141,7 @@ def ganti_akun_otomatis(nama_paket):
         path_prefs = f"/data/data/{nama_paket}/shared_prefs/{nama_paket}_preferences.xml"
         path_temp = f"/storage/emulated/0/temp_prefs_{nama_paket}.xml"
         
-        eksekusi_aman(f"su -c 'cp {path_prefs} {path_temp}'", tunggu=True)
+        eksekusi_aman(f"su -c 'cp {path_prefs} {path_temp}'")
         if os.path.exists(path_temp):
             try:
                 with open(path_temp, 'r', encoding='utf-8', errors='ignore') as f:
@@ -160,7 +149,7 @@ def ganti_akun_otomatis(nama_paket):
                 with open(path_temp, 'w', encoding='utf-8') as f:
                     f.write(isi_baru)
                 
-                eksekusi_aman(f"su -c 'cat {path_temp} > {path_prefs}'", tunggu=True)
+                eksekusi_aman(f"su -c 'cat {path_temp} > {path_prefs}'")
                 os.remove(path_temp)
                 return True
             except Exception:
@@ -169,7 +158,7 @@ def ganti_akun_otomatis(nama_paket):
 
 def deteksi_error_layar(nama_paket):
     path_gambar = f"/storage/emulated/0/kuro_screen_{nama_paket}.png"
-    eksekusi_aman(f"su -c 'screencap -p {path_gambar}'", tunggu=True) 
+    eksekusi_aman(f"su -c 'screencap -p {path_gambar}'") 
     
     if not os.path.exists(path_gambar): return False
     try:
@@ -185,7 +174,6 @@ def deteksi_error_layar(nama_paket):
 
 # --- KOMPONEN DASHBOARD (BUFFERED RENDERING) ---
 def dapatkan_statistik_ram():
-    # Menghapus pengecekan CPU yang berat, fokus ke RAM saja
     stats = {"ram_free": "N/A", "ram_pct": "N/A"}
     try:
         meminfo = subprocess.check_output("cat /proc/meminfo", shell=True, text=True)
@@ -211,7 +199,7 @@ def thread_dashboard():
         buffer_layar += f"| ' / | | | || |_) | | | |\n"
         buffer_layar += f"| . \\ | |_| ||  _ <| |_| |\n"
         buffer_layar += f"|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}\n"
-        buffer_layar += "v4.3 (Fast Queue & Buffered)\n\n"
+        buffer_layar += "v4.4 (Stable Synchronous Queue)\n\n"
         
         buffer_layar += garis_batas
         buffer_layar += f"{WARNA_CYAN}|{WARNA_RESET} {'PACKAGE':<14} {WARNA_CYAN}|{WARNA_RESET} {'STATUS':<23} {WARNA_CYAN}|{WARNA_RESET}\n"
@@ -230,7 +218,7 @@ def thread_dashboard():
         
         sys.stdout.write(buffer_layar)
         sys.stdout.flush()
-        jeda_interupsi(1.5) # Sedikit diperlambat agar lebih stabil
+        jeda_interupsi(1.5) 
 
 # --- KOMPONEN WORKER (ALUR APLIKASI & RECOVERY) ---
 def thread_pekerja_paket(pkg, config, jeda_awal):
@@ -247,12 +235,10 @@ def thread_pekerja_paket(pkg, config, jeda_awal):
         status_paket[pkg] = "Preparing..."
         if fitur_clear_cache: bersihkan_cache(pkg)
             
-        # Menggunakan "Cara 1" Langsung tembak URL
         status_paket[pkg] = "Launch & Join..."
         buka_roblox(pkg, url_global)
         waktu_mulai_dict[pkg] = time.time()
         
-        # Menunggu proses loading aplikasi
         for i in range(delay_launch, 0, -1):
             status_paket[pkg] = f"Wait Process: {i}s"
             if jeda_interupsi(1): return
@@ -322,8 +308,7 @@ def mesin_utama_rejoiner(config):
         threads.append(t_dash)
 
         for i, pkg in enumerate(daftar_paket_aktif):
-            # Memberikan jeda 10 detik antar aplikasi agar HP tidak kaget
-            jeda_stagger = i * 10 
+            jeda_stagger = i * 15 # Jeda 15s per app
             t = threading.Thread(target=thread_pekerja_paket, args=(pkg, config, jeda_stagger))
             t.daemon = True
             t.start()
@@ -389,7 +374,7 @@ def tampilkan_menu():
     print("| ' / | | | || |_) | | | |")
     print("| . \\ | |_| ||  _ <| |_| |")
     print(f"|_|\\_\\ \\___/ |_| \\_\\\\___/ {WARNA_RESET}")
-    print("Version 4.3 (Fast Queue & Buffered)")
+    print("Version 4.4 (Stable Synchronous Queue)")
     print("-" * 60)
     print("  1) Setup Configuration")
     print("  3) Run Script (Multi-Package Dashboard)")
