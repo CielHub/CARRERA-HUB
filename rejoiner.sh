@@ -138,23 +138,31 @@ echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
 
 while true; do
     for pkg in "${PACKAGES[@]}"; do
-        # Ambil PID, lalu babat habis semua spasi atau karakter enter yang tersembunyi
-        PIDS=$(pidof "$pkg" | tr -d '[:space:]')
         
-        # Jika PIDS benar-benar kosong (""), berarti aplikasi mati
-        if [ "$PIDS" == "" ]; then
-            echo "" # Tambah enter biar rapi
-            echo "[!] CRASH DETECTED: $pkg terhenti (Process tidak ditemukan)!"
-            echo "[*] Menjalankan Recovery untuk $pkg..."
+        # VERIFIKASI TAHAP 1: Cek apakah proses menghilang
+        # Menggunakan murni exit code untuk menghindari jebakan subshell/pipe
+        if ! pidof "$pkg" > /dev/null 2>&1; then
             
-            # Panggil ulang fungsi launch untuk package yang crash
-            launch_and_wait "$pkg"
+            # RACE CONDITION MITIGATION: Tunggu 2 detik
+            # Memberikan waktu bagi kernel Android untuk membersihkan "zombie process"
+            sleep 2
             
-            echo "[*] Recovery selesai. Kembali memantau..."
+            # VERIFIKASI TAHAP 2: Cek ulang setelah jeda
+            if ! pidof "$pkg" > /dev/null 2>&1; then
+                echo "" # Jarak enter agar rapi memisahkan dari indikator titik
+                echo "[!] CRASH DETECTED: $pkg terhenti (Double Verification Failed)!"
+                echo "[*] Menjalankan Recovery untuk $pkg..."
+                
+                # Panggil ulang fungsi launch untuk package yang crash
+                launch_and_wait "$pkg"
+                
+                echo "[*] Recovery selesai. Kembali memantau..."
+            fi
         fi
+        
     done
     
-    # Indikator visual (titik) untuk memastikan loop tetap berjalan tiap 15 detik
+    # Indikator visual bahwa script tidak freeze
     echo -n "."
     sleep 15
 done
