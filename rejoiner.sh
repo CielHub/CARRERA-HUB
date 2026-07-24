@@ -110,10 +110,11 @@ echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
 
 while true; do
     for pkg in "${PACKAGES[@]}"; do
-        # Cek apakah PID dari package tersebut masih ada
-        # Menggunakan 'pidof' bawaan Android
-        if ! pidof "$pkg" > /dev/null; then
-            echo "[!] CRASH DETECTED: $pkg terhenti (PID hilang)!"
+        # Gunakan ps dan grep sebagai pengganti pidof.
+        # ps -ef memunculkan semua proses, grep -q mencari nama package secara silent.
+        # grep -v grep mencegah grep mendeteksi dirinya sendiri.
+        if ! ps -ef | grep -v grep | grep -q "$pkg"; then
+            echo "[!] CRASH DETECTED: $pkg terhenti (Process tidak ditemukan)!"
             echo "[*] Menjalankan Recovery untuk $pkg..."
             
             # Panggil ulang fungsi launch untuk package yang crash
@@ -123,6 +124,6 @@ while true; do
         fi
     done
     
-    # Cek setiap 15 detik agar tidak membebani CPU (Bisa lo sesuaikan)
+    # Cek setiap 15 detik agar tidak membebani CPU
     sleep 15
 done
