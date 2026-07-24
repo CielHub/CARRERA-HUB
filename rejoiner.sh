@@ -131,23 +131,43 @@ for pkg in "${PACKAGES[@]}"; do
 done
 
 # ==========================================
-# 5. MONITORING & RECOVERY MODE (PURE DEBUG 2)
+# 5. MONITORING & RECOVERY MODE (PID TRACKING)
 # ==========================================
 echo "[+] SEMUA PACKAGE SELESAI DIPROSES."
-echo "[*] Masuk ke Mode Monitoring (CEK PROSES HANTU). Tekan CTRL+C untuk berhenti."
+echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
+
+# Deklarasi Associative Array untuk menyimpan PID awal tiap package
+declare -A TRACKED_PIDS
+
+# Catat PID masing-masing package sebelum masuk ke loop monitoring
+for pkg in "${PACKAGES[@]}"; do
+    TRACKED_PIDS["$pkg"]=$(pidof "$pkg")
+done
 
 while true; do
-    echo "------------------------------------------------"
-    echo "Waktu Cek: $(date +%H:%M:%S)"
-    
     for pkg in "${PACKAGES[@]}"; do
-        echo ">> Mengecek Package: $pkg"
         
-        # Tampilkan detail semua proses yang pakai nama package ini
-        # Kita pakai ps -A biar keliatan CMD atau nama spesifik service-nya
-        /system/bin/ps -A | grep "$pkg"
+        # Ambil PID yang sedang berjalan saat ini
+        CURRENT_PID=$(pidof "$pkg")
+        
+        # Kondisi 1: CURRENT_PID kosong (Proses benar-benar mati)
+        # Kondisi 2: CURRENT_PID tidak sama dengan TRACKED_PIDS (Proses mati lalu diganti Hantu)
+        if [ -z "$CURRENT_PID" ] || [ "$CURRENT_PID" != "${TRACKED_PIDS["$pkg"]}" ]; then
+            echo ""
+            echo "[!] CRASH DETECTED: $pkg terhenti atau berubah jadi proses hantu!"
+            echo "[*] Menjalankan Recovery untuk $pkg..."
+            
+            # Panggil fungsi launch untuk package yang crash
+            launch_and_wait "$pkg"
+            
+            # PENTING: Update array dengan PID yang baru setelah recovery berhasil
+            TRACKED_PIDS["$pkg"]=$(pidof "$pkg")
+            
+            echo "[*] Recovery selesai. PID baru dicatat. Kembali memantau..."
+        fi
         
     done
     
+    echo -n "."
     sleep 15
 done
