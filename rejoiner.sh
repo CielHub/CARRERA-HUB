@@ -138,9 +138,11 @@ echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
 
 while true; do
     for pkg in "${PACKAGES[@]}"; do
-        # Menggunakan /system/bin/ps -A untuk bypassing env Termux procps
-        if ! /system/bin/ps -A | grep -v grep | grep -q "$pkg"; then
-            echo "[!] CRASH DETECTED: $pkg terhenti (Process tidak ditemukan)!"
+        
+        # Menggunakan pidof yang sekarang sudah di-backup dengan hak akses Root.
+        # Output pidof dibuang ke /dev/null. Jika proses tidak ada, exit code adalah 1 (false).
+        if ! pidof "$pkg" > /dev/null; then
+            echo "[!] CRASH DETECTED: $pkg terhenti (Process utama tidak ditemukan)!"
             echo "[*] Menjalankan Recovery untuk $pkg..."
             
             # Panggil ulang fungsi launch untuk package yang crash
@@ -148,6 +150,7 @@ while true; do
             
             echo "[*] Recovery selesai. Kembali memantau..."
         fi
+        
     done
     
     # Cek setiap 15 detik agar tidak membebani CPU
