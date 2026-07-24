@@ -17,333 +17,459 @@ class Colors:
     RESET = '\033[0m'
     BOLD = '\033[1m'
 
+# ==========================================
+# 1. ROOT EXECUTOR
+# ==========================================
+
 class RootExecutor:
-    """Eksekusi perintah Android via akses Root."""
+    """Eksekusi perintah Android menggunakan akses Root."""
+
     @staticmethod
-    def run(cmd, timeout=15):
+    def run(cmd, timeout=20, silent=True):
         try:
             result = subprocess.run(
-                ['su', '-c', cmd], 
-                capture_output=True, 
-                text=True, 
+                ["su", "-c", cmd],
+                capture_output=True,
+                text=True,
                 timeout=timeout
             )
-            return result.stdout.strip(), result.stderr.strip()
+
+            stdout = result.stdout.strip()
+            stderr = result.stderr.strip()
+
+            if not silent:
+                print(f"\n[CMD] {cmd}")
+                print(f"[STDOUT] {stdout}")
+                print(f"[STDERR] {stderr}")
+
+            return stdout, stderr
+
         except subprocess.TimeoutExpired:
-            return "", "Timeout expired"
+            return "", "Command Timeout"
+
         except Exception as e:
             return "", str(e)
 
     @staticmethod
-    def enable_wakelock():
-        """Mencegah Android mematikan Termux (Doze Mode)."""
-        stdout, _ = RootExecutor.run("dumpsys deviceidle whitelist +com.termux")
-        return "Added" in stdout or stdout == ""
+    def check_root():
+        stdout, _ = RootExecutor.run("id")
+        return "uid=0" in stdout
 
-class URLParser:
-    """Memparsing link Private Server Roblox."""
     @staticmethod
-    def convert_to_deeplink(url):
-        url = url.strip()
-        if url.startswith("roblox://"):
-            return url
-        match_code = re.search(r'code=([a-zA-Z0-9]+)', url, re.IGNORECASE)
-        if match_code:
-            return f"roblox://navigation/share_links?code={match_code.group(1)}&type=Server"
-        return None 
+    def enable_wakelock():
+        cmds = [
+            "dumpsys deviceidle whitelist +com.termux",
+            "svc power stayon true"
+        ]
+
+        success = True
+
+        for cmd in cmds:
+            _, stderr = RootExecutor.run(cmd)
+            if stderr:
+                success = False
+
+        return success
 
 # ==========================================
-# 2. APP MONITOR & ACTION EXECUTOR
+# 2. URL PARSER
+# ==========================================
+
+class URLParser:
+    """Parser Link Private Server Roblox."""
+
+    @staticmethod
+    def convert_to_deeplink(url):
+
+        if not url:
+            return None
+
+        url = url.strip()
+
+        # Sudah berupa deeplink
+        if url.startswith("roblox://"):
+            return url
+
+        # Link share terbaru
+        match = re.search(
+            r"code=([A-Za-z0-9]+).*?type=Server",
+            url,
+            re.IGNORECASE
+        )
+
+        if match:
+            code = match.group(1)
+
+            return (
+                "roblox://navigation/share_links"
+                f"?code={code}&type=Server"
+            )
+
+        # Link lama private server
+        match = re.search(
+            r"privateServerLinkCode=([A-Za-z0-9]+)",
+            url,
+            re.IGNORECASE
+        )
+
+        if match:
+            code = match.group(1)
+
+            return (
+                "roblox://navigation/share_links"
+                f"?code={code}&type=Server"
+            )
+
+        return None
+
+    @staticmethod
+    def validate(url):
+        return URLParser.convert_to_deeplink(url) is not None
+
+
+# ==========================================
+# 2. APP MONITOR
 # ==========================================
 
 class AppMonitor:
-    """Sensor untuk mendeteksi status aplikasi."""
+    """Monitor status aplikasi Roblox."""
+
     @staticmethod
     def is_process_running(package_name):
-        stdout, _ = RootExecutor.run(f"pidof {package_name}")
-        return bool(stdout)
+        stdout, _ = RootExecutor.run(
+            f"pidof {package_name}"
+        )
+        return bool(stdout.strip())
 
     @staticmethod
     def is_window_visible(package_name):
-        stdout, _ = RootExecutor.run("dumpsys window windows")
+        stdout, _ = RootExecutor.run(
+            "dumpsys window windows"
+        )
+
         return package_name in stdout
 
     @staticmethod
+    def is_foreground(package_name):
+        stdout, _ = RootExecutor.run(
+            "dumpsys activity activities | grep mResumedActivity"
+        )
+
+        return package_name in stdout
+
+    @staticmethod
+    def get_focus():
+        stdout, _ = RootExecutor.run(
+            "dumpsys window | grep mCurrentFocus"
+        )
+
+        return stdout
+
+    @staticmethod
+    def get_pid(package_name):
+        stdout, _ = RootExecutor.run(
+            f"pidof {package_name}"
+        )
+
+        return stdout.strip()
+
+    @staticmethod
+    def is_alive(package_name):
+
+        return (
+            AppMonitor.is_process_running(package_name)
+            and
+            AppMonitor.is_window_visible(package_name)
+        )
+
+    @staticmethod
     def get_current_state(package_name):
-        has_pid = AppMonitor.is_process_running(package_name)
-        has_window = AppMonitor.is_window_visible(package_name)
-        
-        if not has_pid: return "STATE_STOPPED"
-        if has_pid and not has_window: return "STATE_GHOST_PROCESS"
-        if has_pid and has_window: return "STATE_RUNNING"
-        return "STATE_UNKNOWN"
+
+        if not AppMonitor.is_process_running(package_name):
+            return "STATE_STOPPED"
+
+        if not AppMonitor.is_window_visible(package_name):
+            return "STATE_GHOST_PROCESS"
+
+        if not AppMonitor.is_foreground(package_name):
+            return "STATE_BACKGROUND"
+
+        return "STATE_RUNNING"
+
+    @staticmethod
+    def wait_until_ready(package_name,
+                         timeout=60,
+                         interval=2):
+        """
+        Menunggu Roblox benar-benar tampil di foreground.
+        """
+
+        start = time.time()
+
+        while time.time() - start < timeout:
+
+            state = AppMonitor.get_current_state(package_name)
+
+            if state == "STATE_RUNNING":
+                return True
+
+            time.sleep(interval)
+
+        return False
+
+    @staticmethod
+    def print_debug(package_name):
+
+        print()
+
+        print("=" * 40)
+        print(package_name)
+        print("=" * 40)
+
+        print(
+            "PID        :",
+            AppMonitor.get_pid(package_name)
+        )
+
+        print(
+            "Running    :",
+            AppMonitor.is_process_running(package_name)
+        )
+
+        print(
+            "Visible    :",
+            AppMonitor.is_window_visible(package_name)
+        )
+
+        print(
+            "Foreground :",
+            AppMonitor.is_foreground(package_name)
+        )
+
+        print(
+            "State      :",
+            AppMonitor.get_current_state(package_name)
+        )
+
+        print(
+            "Focus      :",
+            AppMonitor.get_focus()
+        )
+
+        print()
+
+# ==========================================
+# 3. ACTION EXECUTOR
+# ==========================================
 
 class ActionExecutor:
-    """Mengeksekusi tindakan ke aplikasi Android."""
+    """Eksekusi aksi terhadap aplikasi Roblox."""
+
     @staticmethod
     def force_stop(package_name):
-        RootExecutor.run(f"am force-stop {package_name}")
+
+        print(f"[STOP] {package_name}")
+
+        RootExecutor.run(
+            f"am force-stop {package_name}",
+            silent=True
+        )
+
+        time.sleep(2)
 
     @staticmethod
     def start_app(package_name):
-        # Gunakan monkey agar activity utama otomatis terdeteksi untuk hasil clone APK
-        RootExecutor.run(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
+
+        print(f"[START] {package_name}")
+
+        RootExecutor.run(
+            f"monkey -p {package_name} "
+            "-c android.intent.category.LAUNCHER 1",
+            silent=True
+        )
+
+        return AppMonitor.wait_until_ready(
+            package_name,
+            timeout=60
+        )
 
     @staticmethod
-    def join_server(package_name, deep_link):
-        safe_link = f'"{deep_link}"'
-        cmd = f"am start -W -f 0x14000000 -a android.intent.action.VIEW -d {safe_link} {package_name}"
-        RootExecutor.run(cmd)
+    def join_server(package_name,
+                    deep_link,
+                    retry=3):
+
+        print(f"[JOIN] {package_name}")
+
+        if not deep_link:
+            print("Deep Link kosong.")
+            return False
+
+        for attempt in range(1, retry + 1):
+
+            cmd = (
+                'am start '
+                '-a android.intent.action.VIEW '
+                f'-d "{deep_link}" '
+                f'{package_name}'
+            )
+
+            stdout, stderr = RootExecutor.run(
+                cmd,
+                timeout=20,
+                silent=False
+            )
+
+            if "Error" not in stderr:
+
+                print(
+                    f"[OK] Join command terkirim "
+                    f"(Attempt {attempt})"
+                )
+
+                return True
+
+            print(
+                f"[Retry {attempt}/{retry}]"
+            )
+
+            time.sleep(3)
+
+        print("[FAILED] Tidak dapat mengirim Deep Link.")
+
+        return False
+
+    @staticmethod
+    def restart(package_name):
+
+        ActionExecutor.force_stop(package_name)
+
+        return ActionExecutor.start_app(package_name)
+
+    @staticmethod
+    def recover(package_name,
+                deep_link):
+
+        print(f"[RECOVER] {package_name}")
+
+        if not ActionExecutor.restart(package_name):
+            return False
+
+        time.sleep(5)
+
+        return ActionExecutor.join_server(
+            package_name,
+            deep_link
+        )
+
 
 # ==========================================
-# 3. WATCHDOG STATE MACHINE
+# 4. WATCHDOG STATE MACHINE
 # ==========================================
 
 class Watchdog:
-    """Mesin pengontrol utama sekuensial."""
-    def __init__(self, target_packages, server_link, startup_delay=40):
+    """Watchdog Sequential untuk Delta Lite Multi Package."""
+
+    def __init__(
+        self,
+        target_packages,
+        server_link,
+        startup_delay=40,
+        retry_limit=3
+    ):
+
         self.packages = target_packages
-        self.server_link = URLParser.convert_to_deeplink(server_link)
+
+        self.server_link = URLParser.convert_to_deeplink(
+            server_link
+        )
+
         self.startup_delay = startup_delay
-        
-        self.package_states = {pkg: "INITIALIZING" for pkg in self.packages}
+        self.retry_limit = retry_limit
+
+        # ===============================
+        # STATUS TIAP PACKAGE
+        # ===============================
+
+        self.package_states = {}
+
+        # Waktu mulai launch Roblox
         self.startup_timestamps = {}
-        
-    def process_single_package(self, pkg):
-        current_condition = AppMonitor.get_current_state(pkg)
-        
-        if current_condition in ["STATE_STOPPED", "STATE_GHOST_PROCESS"]:
-            ActionExecutor.force_stop(pkg)
-            ActionExecutor.start_app(pkg)
-            self.startup_timestamps[pkg] = time.time()
-            self.package_states[pkg] = "STATE_STARTING"
-            
-        elif current_condition == "STATE_RUNNING":
-            if pkg in self.startup_timestamps:
-                elapsed_time = time.time() - self.startup_timestamps[pkg]
-                if elapsed_time < self.startup_delay:
-                    time_left = int(self.startup_delay - elapsed_time)
-                    self.package_states[pkg] = f"STATE_STARTING ({time_left}s left)"
-                else:
-                    ActionExecutor.join_server(pkg, self.server_link)
-                    del self.startup_timestamps[pkg]
-                    self.package_states[pkg] = "STATE_JOINING_SERVER"
-            else:
-                self.package_states[pkg] = "STATE_IN_GAME / MONITORING"
-                
-        return self.package_states[pkg]
 
-    def run_cycle(self):
+        # Waktu terakhir join
+        self.last_join_time = {}
+
+        # Jumlah retry join
+        self.retry_counter = {}
+
+        # Cooldown recovery
+        self.recovery_timer = {}
+
+        # Apakah package sudah pernah join
+        self.joined = {}
+
+        # ===============================
+        # INISIALISASI
+        # ===============================
+
+        now = time.time()
+
         for pkg in self.packages:
-            self.process_single_package(pkg)
-            time.sleep(0.5) # Jeda nafas CPU Android
 
-# ==========================================
-# 4. USER INTERFACE (UI)
-# ==========================================
+            self.package_states[pkg] = "STATE_INITIALIZING"
 
-def clear_screen():
-    os.system('clear')
+            self.startup_timestamps[pkg] = 0
 
-def print_ascii_art():
-    logo = f"""{Colors.CYAN}{Colors.BOLD}
-    ______                                     
-   / ____/___ ______________  _________ _      
-  / /   / __ `/ ___/ ___/ _ \/ ___/ __ `/      
- / /___/ /_/ / /  / /  /  __/ /  / /_/ /       
- \____/\__,_/_/  /_/   \___/_/   \__,_/        
-                                               
- {Colors.WHITE}[ Auto Rejoiner - Delta Lite Termux Edition ]{Colors.RESET}
-    """
-    print(logo)
+            self.last_join_time[pkg] = 0
 
-def print_divider():
-    print(f"{Colors.WHITE}================================================================={Colors.RESET}")
+            self.retry_counter[pkg] = 0
 
-def scan_installed_packages():
-    detected_packages = []
-    try:
-        result = subprocess.run(['pm', 'list', 'packages'], capture_output=True, text=True)
-        for line in result.stdout.splitlines():
-            if 'roblox' in line.lower() or 'delta' in line.lower():
-                pkg_name = line.split(':')[1].strip()
-                detected_packages.append(pkg_name)
-        return sorted(list(set(detected_packages)))
-    except Exception:
-        return ['com.roblox.client']
+            self.recovery_timer[pkg] = now
 
-def render_main_menu(server_link="Not Set", target_packages=None):
-    if target_packages is None:
-        target_packages = []
-        
-    clear_screen()
-    print_divider()
-    print_ascii_art()
-    print_divider()
-    
-    print(f"\n {Colors.BOLD}[ SYSTEM INFO ]{Colors.RESET}")
-    
-    if not target_packages:
-        display_pkgs = f"{Colors.RED}None Selected{Colors.RESET}"
-    else:
-        joined_pkgs = ", ".join(target_packages)
-        display_pkgs = f"{Colors.CYAN}{joined_pkgs[:39]}...{Colors.RESET}" if len(joined_pkgs) > 42 else f"{Colors.CYAN}{joined_pkgs}{Colors.RESET}"
-            
-    print(f" Target Packages: {display_pkgs}")
-    print(f" Root Access    : {Colors.GREEN}[ OK ]{Colors.RESET}") 
-    print(f" Doze/Wakelock  : {Colors.GREEN}[ READY ]{Colors.RESET}")
-    
-    print(f"\n {Colors.BOLD}[ BOT STATUS ]{Colors.RESET}")
-    display_link = server_link if len(server_link) < 45 else server_link[:42] + "..."
-    link_color = Colors.WHITE if server_link == "Not Set" else Colors.GREEN
-    print(f" Current State  : {Colors.YELLOW}IDLE (Waiting for command){Colors.RESET}")
-    print(f" Target Server  : {link_color}{display_link}{Colors.RESET}\n")
-    
-    print_divider()
-    print(f" {Colors.BOLD}[ MAIN MENU ]{Colors.RESET}\n")
-    print(f" {Colors.YELLOW}[ 1 ]{Colors.RESET} Set Private Server Link")
-    print(f" {Colors.YELLOW}[ 2 ]{Colors.RESET} Select Target Packages (Multi-Select)")
-    print(f" {Colors.YELLOW}[ 3 ]{Colors.RESET} Start Auto Rejoiner (Watchdog Mode)")
-    print(f" {Colors.YELLOW}[ 4 ]{Colors.RESET} Stop / Force Kill All Selected")
-    print(f" {Colors.RED}[ 0 ]{Colors.RESET} Exit\n")
-    print_divider()
+            self.joined[pkg] = False
 
-def multi_select_menu(available_packages, current_selection):
-    while True:
-        clear_screen()
-        print_divider()
-        print(f" {Colors.CYAN}{Colors.BOLD}[ MULTI-SELECT PACKAGES ]{Colors.RESET}")
-        print(f" {Colors.WHITE}Pilih angka untuk menandai/menghapus ceklis.{Colors.RESET}")
-        print_divider()
-        print("")
-        
-        if not available_packages:
-            print(f" {Colors.RED}Tidak ada package Roblox yang terdeteksi!{Colors.RESET}")
-            time.sleep(2)
-            return current_selection
-            
-        for idx, pkg in enumerate(available_packages):
-            if pkg in current_selection:
-                checkbox = f"{Colors.GREEN}[ X ]{Colors.RESET}"
-                pkg_text = f"{Colors.GREEN}{pkg}{Colors.RESET}"
-            else:
-                checkbox = f"{Colors.WHITE}[   ]{Colors.RESET}"
-                pkg_text = f"{Colors.WHITE}{pkg}{Colors.RESET}"
-            print(f" {Colors.YELLOW}[ {idx + 1} ]{Colors.RESET} {checkbox} {pkg_text}")
-            
-        print(f"\n {Colors.RED}[ 0 ]{Colors.RESET} {Colors.BOLD}Selesai & Kembali{Colors.RESET}")
-        print_divider()
-        
-        try:
-            selection = input(f"\n {Colors.CYAN}Pilih Nomor:{Colors.RESET} ")
-            if selection == '0': break
-                
-            sel_idx = int(selection) - 1
-            if 0 <= sel_idx < len(available_packages):
-                selected_pkg = available_packages[sel_idx]
-                if selected_pkg in current_selection:
-                    current_selection.remove(selected_pkg)
-                else:
-                    current_selection.append(selected_pkg)
-            else:
-                print(f" {Colors.RED}Pilihan tidak valid.{Colors.RESET}")
-                time.sleep(0.5)
-        except ValueError:
-            print(f" {Colors.RED}Input harus berupa angka.{Colors.RESET}")
-            time.sleep(0.5)
-            
-    return current_selection
+def process_single_package(self, item):
 
-def live_watchdog_dashboard(watchdog):
-    """Merender dashboard real-time tanpa berkedip parah."""
-    clear_screen()
-    print_divider()
-    print(f" {Colors.CYAN}{Colors.BOLD}[ WATCHDOG MODE - ACTIVE ]{Colors.RESET}")
-    print(f" {Colors.RED}>> Tekan CTRL + C untuk menghentikan & kembali ke menu.{Colors.RESET}")
-    print_divider()
-    
-    for pkg in watchdog.packages:
-        state = watchdog.package_states[pkg]
-        if "IN_GAME" in state:
-            color = Colors.GREEN
-        elif "STARTING" in state or "JOINING" in state:
-            color = Colors.YELLOW
+    state = self.package_states[item]
+
+    if state == "STATE_INITIALIZING":
+        # siapkan resource
+        self.package_states[item] = "STATE_STARTING"
+        return
+
+    elif state == "STATE_STARTING":
+        # cek apakah aplikasi sudah siap
+        if self.is_ready(item):
+            self.package_states[item] = "STATE_READY"
+        return
+
+    elif state == "STATE_READY":
+        # jalankan aksi utama
+        success = self.perform_action(item)
+
+        if success:
+            self.package_states[item] = "STATE_MONITORING"
         else:
-            color = Colors.RED
-            
-        print(f" {Colors.WHITE}[ {pkg} ]{Colors.RESET}")
-        print(f" Status : {color}{state}{Colors.RESET}\n")
-    print_divider()
+            self.package_states[item] = "STATE_RECOVERING"
 
-# ==========================================
-# 5. MAIN APPLICATION LOOP
-# ==========================================
+        return
 
-def main_loop():
-    current_link = "Not Set"
-    available_packages = scan_installed_packages()
-    target_packages = [available_packages[0]] if available_packages else []
-    
-    while True:
-        render_main_menu(server_link=current_link, target_packages=target_packages)
-        
-        try:
-            choice = input(f" {Colors.CYAN}Carrera-Bot@Termux:~# {Colors.RESET}")
-            
-            if choice == '1':
-                print(f"\n {Colors.YELLOW}>>{Colors.RESET} Paste link Private Server Roblox:")
-                current_link = input(f" {Colors.CYAN}Link:{Colors.RESET} ").strip()
-                
-            elif choice == '2':
-                available_packages = scan_installed_packages() 
-                target_packages = multi_select_menu(available_packages, target_packages)
-                
-            elif choice == '3':
-                if not target_packages:
-                    print(f"\n {Colors.RED}>> Error: Tidak ada package yang dipilih!{Colors.RESET}")
-                    time.sleep(2)
-                    continue
-                if current_link == "Not Set" or URLParser.convert_to_deeplink(current_link) is None:
-                    print(f"\n {Colors.RED}>> Error: Link Private Server tidak valid!{Colors.RESET}")
-                    time.sleep(2)
-                    continue
-                    
-                print(f"\n {Colors.GREEN}>> Mengaktifkan Wakelock...{Colors.RESET}")
-                RootExecutor.enable_wakelock()
-                time.sleep(1)
-                
-                # Inisialisasi State Machine
-                watchdog = Watchdog(target_packages, current_link, startup_delay=40)
-                
-                try:
-                    # Looping Utama Watchdog (Sequential)
-                    while True:
-                        watchdog.run_cycle()
-                        live_watchdog_dashboard(watchdog)
-                        time.sleep(2) # Refresh UI setiap 2 detik
-                except KeyboardInterrupt:
-                    print(f"\n {Colors.YELLOW}>> Watchdog dihentikan oleh user. Kembali ke menu utama...{Colors.RESET}")
-                    time.sleep(1.5)
-                
-            elif choice == '4':
-                if not target_packages:
-                    print(f"\n {Colors.RED}>> Tidak ada target untuk dimatikan.{Colors.RESET}")
-                else:
-                    print(f"\n {Colors.RED}>> Mengeksekusi 'am force-stop' untuk {len(target_packages)} package...{Colors.RESET}")
-                    for pkg in target_packages:
-                        ActionExecutor.force_stop(pkg)
-                time.sleep(1.5)
-                
-            elif choice == '0':
-                clear_screen()
-                print(f"{Colors.GREEN}Terima kasih telah menggunakan Carrera Auto Rejoiner.{Colors.RESET}")
-                sys.exit(0)
-                
-        except KeyboardInterrupt:
-            clear_screen()
-            print(f"{Colors.GREEN}Program dihentikan oleh user.{Colors.RESET}")
-            sys.exit(0)
+    elif state == "STATE_MONITORING":
+        # pantau kondisi
+        if self.needs_recovery(item):
+            self.package_states[item] = "STATE_RECOVERING"
 
-if __name__ == "__main__":
-    # Pastikan script dijalankan di environment Termux/Root
-    main_loop()
+        return
+
+    elif state == "STATE_RECOVERING":
+        ok = self.recover(item)
+
+        if ok:
+            self.package_states[item] = "STATE_STARTING"
+        else:
+            self.package_states[item] = "STATE_FAILED"
+
+        return
+
+    elif state == "STATE_FAILED":
+        # menunggu retry manual atau timer
+        return
