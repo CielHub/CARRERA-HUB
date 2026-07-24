@@ -110,20 +110,29 @@ echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
 
 while true; do
     for pkg in "${PACKAGES[@]}"; do
-        # Gunakan ps dan grep sebagai pengganti pidof.
-        # ps -ef memunculkan semua proses, grep -q mencari nama package secara silent.
-        # grep -v grep mencegah grep mendeteksi dirinya sendiri.
-        if ! ps -ef | grep -v grep | grep -q "$pkg"; then
-            echo "[!] CRASH DETECTED: $pkg terhenti (Process tidak ditemukan)!"
-            echo "[*] Menjalankan Recovery untuk $pkg..."
-            
-            # Panggil ulang fungsi launch untuk package yang crash
-            launch_and_wait "$pkg"
-            
-            echo "[*] Recovery selesai. Kembali memantau..."
-        fi
+        
+        echo "===== DEBUG INFO ====="
+        echo "Target Package: [$pkg]"
+        
+        # Mengecek apakah ada karakter tersembunyi \r menggunakan hexdump
+        echo -n "Hex format: "
+        echo -n "$pkg" | hexdump -C | head -n 1
+        
+        # Mengecek hasil ps bawaan Android
+        echo "Output /system/bin/ps -A:"
+        /system/bin/ps -A | grep -i "roblox"
+        
+        # Mengecek hasil ps -ef yang dipakai di script
+        echo "Output ps -ef:"
+        ps -ef | grep -i "roblox"
+        echo "======================"
+        
+        # Logika monitoring asli sementara dikomentari agar tidak terjadi loop recovery
+        # if ! ps -ef | grep -v grep | grep -q "$pkg"; then
+        #     echo "[!] CRASH DETECTED: $pkg terhenti (Process tidak ditemukan)!"
+        #     launch_and_wait "$pkg"
+        # fi
+        
     done
-    
-    # Cek setiap 15 detik agar tidak membebani CPU
     sleep 15
 done
