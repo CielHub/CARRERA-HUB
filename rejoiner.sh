@@ -138,10 +138,12 @@ echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
 
 while true; do
     for pkg in "${PACKAGES[@]}"; do
-        # Ambil PID dari proses. Jika kosong, berarti aplikasi sudah mati.
-        PIDS=$(pidof "$pkg")
+        # Ambil PID, lalu babat habis semua spasi atau karakter enter yang tersembunyi
+        PIDS=$(pidof "$pkg" | tr -d '[:space:]')
         
-        if [ -z "$PIDS" ]; then
+        # Jika PIDS benar-benar kosong (""), berarti aplikasi mati
+        if [ "$PIDS" == "" ]; then
+            echo "" # Tambah enter biar rapi
             echo "[!] CRASH DETECTED: $pkg terhenti (Process tidak ditemukan)!"
             echo "[*] Menjalankan Recovery untuk $pkg..."
             
@@ -152,6 +154,7 @@ while true; do
         fi
     done
     
-    # Cek setiap 15 detik agar tidak membebani CPU
+    # Indikator visual (titik) untuk memastikan loop tetap berjalan tiap 15 detik
+    echo -n "."
     sleep 15
 done
