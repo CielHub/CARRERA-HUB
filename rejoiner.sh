@@ -131,38 +131,30 @@ for pkg in "${PACKAGES[@]}"; do
 done
 
 # ==========================================
-# 5. MONITORING & RECOVERY MODE
+# 5. MONITORING & RECOVERY MODE (PURE DEBUG)
 # ==========================================
 echo "[+] SEMUA PACKAGE SELESAI DIPROSES."
-echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
+echo "[*] Masuk ke Mode Monitoring (DEBUG PIDOF). Tekan CTRL+C untuk berhenti."
 
 while true; do
+    echo "------------------------------------------------"
+    echo "Waktu Cek: $(date +%H:%M:%S)"
+    
     for pkg in "${PACKAGES[@]}"; do
+        echo ">> Mengecek Package: $pkg"
         
-        # VERIFIKASI TAHAP 1: Cek apakah proses menghilang
-        # Menggunakan murni exit code untuk menghindari jebakan subshell/pipe
-        if ! pidof "$pkg" > /dev/null 2>&1; then
-            
-            # RACE CONDITION MITIGATION: Tunggu 2 detik
-            # Memberikan waktu bagi kernel Android untuk membersihkan "zombie process"
-            sleep 2
-            
-            # VERIFIKASI TAHAP 2: Cek ulang setelah jeda
-            if ! pidof "$pkg" > /dev/null 2>&1; then
-                echo "" # Jarak enter agar rapi memisahkan dari indikator titik
-                echo "[!] CRASH DETECTED: $pkg terhenti (Double Verification Failed)!"
-                echo "[*] Menjalankan Recovery untuk $pkg..."
-                
-                # Panggil ulang fungsi launch untuk package yang crash
-                launch_and_wait "$pkg"
-                
-                echo "[*] Recovery selesai. Kembali memantau..."
-            fi
-        fi
+        # Eksekusi pidof dan langsung tangkap outputnya
+        PIDS=$(pidof "$pkg")
+        
+        # Langsung tangkap exit code dari perintah pidof barusan ($?)
+        # Ini harus diletakkan persis di bawah eksekusi pidof
+        EXIT_CODE=$?
+        
+        # Tampilkan data ke layar
+        echo "   Nilai \$PIDS : [$PIDS]"
+        echo "   Exit Code   : $EXIT_CODE"
         
     done
     
-    # Indikator visual bahwa script tidak freeze
-    echo -n "."
     sleep 15
 done
