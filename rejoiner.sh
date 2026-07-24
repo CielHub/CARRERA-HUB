@@ -11,18 +11,28 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 source "$CONFIG_FILE"
 
-# Extract Place ID dan Link Code dari URL pakai Regex
-PLACE_ID=$(echo "$PRIVATE_SERVER_LINK" | grep -oP 'games/\K\d+')
-LINK_CODE=$(echo "$PRIVATE_SERVER_LINK" | grep -oP 'privateServerLinkCode=\K[^&]+')
+# Cek apakah ini format Share Link baru atau format lama
+if echo "$PRIVATE_SERVER_LINK" | grep -q "/share"; then
+    # Format Baru: Tidak ada Place ID di URL
+    # Kita langsung jadikan URL aslinya sebagai Intent, Roblox akan otomatis membacanya
+    INTENT_URL="$PRIVATE_SERVER_LINK"
+    echo "[+] Terdeteksi format Share Link baru."
+else
+    # Format Lama: Extract Place ID dan Link Code pakai Regex
+    PLACE_ID=$(echo "$PRIVATE_SERVER_LINK" | grep -oP 'games/\K\d+')
+    LINK_CODE=$(echo "$PRIVATE_SERVER_LINK" | grep -oP 'privateServerLinkCode=\K[^&]+')
 
-if [ -z "$PLACE_ID" ] || [ -z "$LINK_CODE" ]; then
-    echo "[!] Link Private Server tidak valid di config.conf!"
-    exit 1
+    if [ -z "$PLACE_ID" ] || [ -z "$LINK_CODE" ]; then
+        echo "[!] Link Private Server tidak valid di config.conf!"
+        exit 1
+    fi
+
+    # Bentuk Roblox Intent URL format lama
+    INTENT_URL="roblox://placeId=$PLACE_ID&linkCode=$LINK_CODE"
+    echo "[+] URL Berhasil dikonversi ke Intent (Format Lama)."
 fi
 
-# Bentuk Roblox Intent URL
-INTENT_URL="roblox://placeId=$PLACE_ID&linkCode=$LINK_CODE"
-echo "[+] URL Berhasil dikonversi ke Intent:"
+echo "[+] Target Intent yang akan dieksekusi:"
 echo "    -> $INTENT_URL"
 echo "------------------------------------------------"
 
