@@ -1,24 +1,49 @@
 #!/bin/bash
 
-CONFIG_FILE="config.conf"
+# ==========================================
+# 0. AUTO REQUEST ROOT & DIRECTORY SETUP
+# ==========================================
+# Ambil path direktori tempat script ini berada agar eksekusi root tidak salah folder
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR" || { echo "[!] Gagal masuk ke direktori script."; exit 1; }
+
+# Cek apakah script sudah berjalan sebagai root (UID 0)
+if [ "$(id -u)" -ne 0 ]; then
+    echo "[*] Script ini membutuhkan akses Root untuk bekerja."
+    echo "[*] Meminta izin Root ke sistem..."
+    
+    # Eksekusi ulang script ini dengan su
+    su -c "bash \"$SCRIPT_DIR/$(basename \"$0\")\""
+    
+    # Menangkap exit code dari su (gagal/ditolak)
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo "------------------------------------------------"
+        echo "[!] Gagal mendapatkan akses Root."
+        echo "[!] Pastikan HP sudah di-root dan berikan izin (Grant) pada prompt Magisk/KernelSU."
+        exit 1
+    fi
+    
+    # Tutup instance non-root setelah eksekusi root selesai
+    exit 0
+fi
 
 # ==========================================
 # 1. LOAD CONFIG & PARSE URL TO DEEP LINK
 # ==========================================
+CONFIG_FILE="config.conf"
+
 if [ ! -f "$CONFIG_FILE" ]; then
-    echo "[!] File config.conf tidak ditemukan!"
+    echo "[!] File config.conf tidak ditemukan di: $SCRIPT_DIR"
     exit 1
 fi
 source "$CONFIG_FILE"
 
 # Cek apakah ini format Share Link baru atau format lama
 if echo "$PRIVATE_SERVER_LINK" | grep -q "/share"; then
-    # Format Baru: Tidak ada Place ID di URL
-    # Kita langsung jadikan URL aslinya sebagai Intent, Roblox akan otomatis membacanya
     INTENT_URL="$PRIVATE_SERVER_LINK"
     echo "[+] Terdeteksi format Share Link baru."
 else
-    # Format Lama: Extract Place ID dan Link Code pakai Regex
     PLACE_ID=$(echo "$PRIVATE_SERVER_LINK" | grep -oP 'games/\K\d+')
     LINK_CODE=$(echo "$PRIVATE_SERVER_LINK" | grep -oP 'privateServerLinkCode=\K[^&]+')
 
@@ -26,8 +51,6 @@ else
         echo "[!] Link Private Server tidak valid di config.conf!"
         exit 1
     fi
-
-    # Bentuk Roblox Intent URL format lama
     INTENT_URL="roblox://placeId=$PLACE_ID&linkCode=$LINK_CODE"
     echo "[+] URL Berhasil dikonversi ke Intent (Format Lama)."
 fi
@@ -40,7 +63,6 @@ echo "------------------------------------------------"
 # 2. SCAN ROBLOX PACKAGES
 # ==========================================
 echo "[*] Melakukan scan package Roblox..."
-# Cari semua package yang mengandung kata "roblox"
 PACKAGES=($(pm list packages | grep -i "roblox" | cut -d':' -f2))
 
 if [ ${#PACKAGES[@]} -eq 0 ]; then
@@ -71,8 +93,6 @@ launch_and_wait() {
     echo "[*] Menunggu $PKG_NAME masuk ke server (Smart Wait: $TIMEOUT_SECONDS detik)..."
     
     # SMART WAIT: Pantau logcat di background
-    # Note: "GameJoinUtil" atau "DataModel" biasanya muncul saat Roblox berhasil connect.
-    # Lo bisa ganti keyword ini sesuai hasil riset logcat lo nanti.
     logcat | grep -m 1 -iE "GameJoinUtil|DataModel initialized|successfully connected" > /dev/null &
     local LOGCAT_PID=$!
     
@@ -110,29 +130,18 @@ echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
 
 while true; do
     for pkg in "${PACKAGES[@]}"; do
-        
-        echo "===== DEBUG INFO ====="
-        echo "Target Package: [$pkg]"
-        
-        # Mengecek apakah ada karakter tersembunyi \r menggunakan hexdump
-        echo -n "Hex format: "
-        echo -n "$pkg" | hexdump -C | head -n 1
-        
-        # Mengecek hasil ps bawaan Android
-        echo "Output /system/bin/ps -A:"
-        /system/bin/ps -A | grep -i "roblox"
-        
-        # Mengecek hasil ps -ef yang dipakai di script
-        echo "Output ps -ef:"
-        ps -ef | grep -i "roblox"
-        echo "======================"
-        
-        # Logika monitoring asli sementara dikomentari agar tidak terjadi loop recovery
-        # if ! ps -ef | grep -v grep | grep -q "$pkg"; then
-        #     echo "[!] CRASH DETECTED: $pkg terhenti (Process tidak ditemukan)!"
-        #     launch_and_wait "$pkg"
-        # fi
-        
+        # Menggunakan /system/bin/ps -A untuk bypassing env Termux procps
+        if ! /system/bin/ps -A | grep -v grep | grep -q "$pkg"; then
+            echo "[!] CRASH DETECTED: $pkg terhenti (Process tidak ditemukan)!"
+            echo "[*] Menjalankan Recovery untuk $pkg..."
+            
+            # Panggil ulang fungsi launch untuk package yang crash
+            launch_and_wait "$pkg"
+            
+            echo "[*] Recovery selesai. Kembali memantau..."
+        fi
     done
+    
+    # Cek setiap 15 detik agar tidak membebani CPU
     sleep 15
 done
