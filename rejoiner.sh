@@ -131,10 +131,10 @@ for pkg in "${PACKAGES[@]}"; do
 done
 
 # ==========================================
-# 5. MONITORING & RECOVERY MODE (PURE DEBUG)
+# 5. MONITORING & RECOVERY MODE (PURE DEBUG 2)
 # ==========================================
 echo "[+] SEMUA PACKAGE SELESAI DIPROSES."
-echo "[*] Masuk ke Mode Monitoring (DEBUG PIDOF). Tekan CTRL+C untuk berhenti."
+echo "[*] Masuk ke Mode Monitoring (CEK PROSES HANTU). Tekan CTRL+C untuk berhenti."
 
 while true; do
     echo "------------------------------------------------"
@@ -143,16 +143,9 @@ while true; do
     for pkg in "${PACKAGES[@]}"; do
         echo ">> Mengecek Package: $pkg"
         
-        # Eksekusi pidof dan langsung tangkap outputnya
-        PIDS=$(pidof "$pkg")
-        
-        # Langsung tangkap exit code dari perintah pidof barusan ($?)
-        # Ini harus diletakkan persis di bawah eksekusi pidof
-        EXIT_CODE=$?
-        
-        # Tampilkan data ke layar
-        echo "   Nilai \$PIDS : [$PIDS]"
-        echo "   Exit Code   : $EXIT_CODE"
+        # Tampilkan detail semua proses yang pakai nama package ini
+        # Kita pakai ps -A biar keliatan CMD atau nama spesifik service-nya
+        /system/bin/ps -A | grep "$pkg"
         
     done
     
