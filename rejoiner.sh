@@ -3,17 +3,21 @@
 # ==========================================
 # 0. AUTO REQUEST ROOT & DIRECTORY SETUP
 # ==========================================
-# Ambil path direktori tempat script ini berada agar eksekusi root tidak salah folder
+# Ambil path direktori tempat script ini berada
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR" || { echo "[!] Gagal masuk ke direktori script."; exit 1; }
+SCRIPT_NAME="$(basename "$0")"
 
 # Cek apakah script sudah berjalan sebagai root (UID 0)
 if [ "$(id -u)" -ne 0 ]; then
     echo "[*] Script ini membutuhkan akses Root untuk bekerja."
     echo "[*] Meminta izin Root ke sistem..."
     
-    # Eksekusi ulang script ini dengan su
-    su -c "bash \"$SCRIPT_DIR/$(basename \"$0\")\""
+    # Ambil lokasi absolute dari binary bash Termux sebelum masuk ke environment root.
+    # Jika command -v gagal, gunakan path default Termux sebagai fallback.
+    TERMUX_BASH=$(command -v bash || echo "/data/data/com.termux/files/usr/bin/bash")
+    
+    # Eksekusi ulang script menggunakan absolute path bash Termux
+    su -c "$TERMUX_BASH \"$SCRIPT_DIR/$SCRIPT_NAME\""
     
     # Menangkap exit code dari su (gagal/ditolak)
     EXIT_CODE=$?
@@ -24,9 +28,13 @@ if [ "$(id -u)" -ne 0 ]; then
         exit 1
     fi
     
-    # Tutup instance non-root setelah eksekusi root selesai
+    # Tutup instance non-root (Termux biasa) setelah eksekusi root selesai
     exit 0
 fi
+
+# Pindah ke direktori script agar file config.conf terbaca
+cd "$SCRIPT_DIR" || { echo "[!] Gagal masuk ke direktori script."; exit 1; }
+
 
 # ==========================================
 # 1. LOAD CONFIG & PARSE URL TO DEEP LINK
