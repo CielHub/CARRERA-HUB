@@ -12,7 +12,7 @@ WAIT_AFTER_JOIN=20     # Waktu (detik) untuk nunggu Roblox loading
 is_roblox_running() {
     # Menggunakan 'su -c' untuk mengecek PID menggunakan akses root.
     # Jika lu pakai Wireless ADB (tanpa root), ganti 'su -c' jadi 'adb shell'
-    PID=$(su -c 'pidof com.roblox.client' 2>/dev/null)
+    PID=$(su -c 'pidof com.roblox.clienu' 2>/dev/null)
     
     if [ -z "$PID" ]; then
         return 1 # False (PID kosong = Crash / Tidak jalan)
