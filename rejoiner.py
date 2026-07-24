@@ -13,17 +13,16 @@ class Colors:
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
     RED = '\033[91m'
+    BLUE = '\033[94m'
     WHITE = '\033[97m'
     RESET = '\033[0m'
     BOLD = '\033[1m'
 
 # ==========================================
-# 1. ROOT EXECUTOR
+# 2. ROOT EXECUTOR
 # ==========================================
 
 class RootExecutor:
-    """Eksekusi perintah Android menggunakan akses Root."""
-
     @staticmethod
     def run(cmd, timeout=20, silent=True):
         try:
@@ -33,20 +32,14 @@ class RootExecutor:
                 text=True,
                 timeout=timeout
             )
-
             stdout = result.stdout.strip()
             stderr = result.stderr.strip()
-
+            
             if not silent:
-                print(f"\n[CMD] {cmd}")
-                print(f"[STDOUT] {stdout}")
-                print(f"[STDERR] {stderr}")
-
+                print(f"[{Colors.CYAN}CMD{Colors.RESET}] {cmd}")
             return stdout, stderr
-
         except subprocess.TimeoutExpired:
             return "", "Command Timeout"
-
         except Exception as e:
             return "", str(e)
 
@@ -61,415 +54,408 @@ class RootExecutor:
             "dumpsys deviceidle whitelist +com.termux",
             "svc power stayon true"
         ]
-
         success = True
-
         for cmd in cmds:
             _, stderr = RootExecutor.run(cmd)
             if stderr:
                 success = False
-
         return success
 
 # ==========================================
-# 2. URL PARSER
+# 3. URL PARSER
 # ==========================================
 
 class URLParser:
-    """Parser Link Private Server Roblox."""
-
     @staticmethod
     def convert_to_deeplink(url):
-
         if not url:
             return None
-
         url = url.strip()
-
-        # Sudah berupa deeplink
         if url.startswith("roblox://"):
             return url
-
-        # Link share terbaru
-        match = re.search(
-            r"code=([A-Za-z0-9]+).*?type=Server",
-            url,
-            re.IGNORECASE
-        )
-
+            
+        match = re.search(r"code=([A-Za-z0-9]+).*?type=Server", url, re.IGNORECASE)
         if match:
             code = match.group(1)
-
-            return (
-                "roblox://navigation/share_links"
-                f"?code={code}&type=Server"
-            )
-
-        # Link lama private server
-        match = re.search(
-            r"privateServerLinkCode=([A-Za-z0-9]+)",
-            url,
-            re.IGNORECASE
-        )
-
+            return f"roblox://navigation/share_links?code={code}&type=Server"
+            
+        match = re.search(r"privateServerLinkCode=([A-Za-z0-9]+)", url, re.IGNORECASE)
         if match:
             code = match.group(1)
-
-            return (
-                "roblox://navigation/share_links"
-                f"?code={code}&type=Server"
-            )
-
+            return f"roblox://navigation/share_links?code={code}&type=Server"
+            
         return None
 
     @staticmethod
     def validate(url):
         return URLParser.convert_to_deeplink(url) is not None
 
-
 # ==========================================
-# 2. APP MONITOR
+# 4. APP MONITOR
 # ==========================================
 
 class AppMonitor:
-    """Monitor status aplikasi Roblox."""
-
     @staticmethod
     def is_process_running(package_name):
-        stdout, _ = RootExecutor.run(
-            f"pidof {package_name}"
-        )
+        stdout, _ = RootExecutor.run(f"pidof {package_name}")
         return bool(stdout.strip())
 
     @staticmethod
     def is_window_visible(package_name):
-        stdout, _ = RootExecutor.run(
-            "dumpsys window windows"
-        )
-
+        stdout, _ = RootExecutor.run("dumpsys window windows")
         return package_name in stdout
 
     @staticmethod
     def is_foreground(package_name):
-        stdout, _ = RootExecutor.run(
-            "dumpsys activity activities | grep mResumedActivity"
-        )
-
+        stdout, _ = RootExecutor.run("dumpsys activity activities | grep mResumedActivity")
         return package_name in stdout
 
     @staticmethod
     def get_focus():
-        stdout, _ = RootExecutor.run(
-            "dumpsys window | grep mCurrentFocus"
-        )
-
+        stdout, _ = RootExecutor.run("dumpsys window | grep mCurrentFocus")
         return stdout
 
     @staticmethod
     def get_pid(package_name):
-        stdout, _ = RootExecutor.run(
-            f"pidof {package_name}"
-        )
-
+        stdout, _ = RootExecutor.run(f"pidof {package_name}")
         return stdout.strip()
 
     @staticmethod
     def is_alive(package_name):
-
-        return (
-            AppMonitor.is_process_running(package_name)
-            and
-            AppMonitor.is_window_visible(package_name)
-        )
+        return (AppMonitor.is_process_running(package_name) and 
+                AppMonitor.is_window_visible(package_name))
 
     @staticmethod
     def get_current_state(package_name):
-
         if not AppMonitor.is_process_running(package_name):
             return "STATE_STOPPED"
-
         if not AppMonitor.is_window_visible(package_name):
             return "STATE_GHOST_PROCESS"
-
         if not AppMonitor.is_foreground(package_name):
             return "STATE_BACKGROUND"
-
         return "STATE_RUNNING"
 
-    @staticmethod
-    def wait_until_ready(package_name,
-                         timeout=60,
-                         interval=2):
-        """
-        Menunggu Roblox benar-benar tampil di foreground.
-        """
-
-        start = time.time()
-
-        while time.time() - start < timeout:
-
-            state = AppMonitor.get_current_state(package_name)
-
-            if state == "STATE_RUNNING":
-                return True
-
-            time.sleep(interval)
-
-        return False
-
-    @staticmethod
-    def print_debug(package_name):
-
-        print()
-
-        print("=" * 40)
-        print(package_name)
-        print("=" * 40)
-
-        print(
-            "PID        :",
-            AppMonitor.get_pid(package_name)
-        )
-
-        print(
-            "Running    :",
-            AppMonitor.is_process_running(package_name)
-        )
-
-        print(
-            "Visible    :",
-            AppMonitor.is_window_visible(package_name)
-        )
-
-        print(
-            "Foreground :",
-            AppMonitor.is_foreground(package_name)
-        )
-
-        print(
-            "State      :",
-            AppMonitor.get_current_state(package_name)
-        )
-
-        print(
-            "Focus      :",
-            AppMonitor.get_focus()
-        )
-
-        print()
-
 # ==========================================
-# 3. ACTION EXECUTOR
+# 5. ACTION EXECUTOR
 # ==========================================
 
 class ActionExecutor:
-    """Eksekusi aksi terhadap aplikasi Roblox."""
-
     @staticmethod
     def force_stop(package_name):
-
-        print(f"[STOP] {package_name}")
-
-        RootExecutor.run(
-            f"am force-stop {package_name}",
-            silent=True
-        )
-
-        time.sleep(2)
+        RootExecutor.run(f"am force-stop {package_name}", silent=True)
 
     @staticmethod
     def start_app(package_name):
-
-        print(f"[START] {package_name}")
-
-        RootExecutor.run(
-            f"monkey -p {package_name} "
-            "-c android.intent.category.LAUNCHER 1",
-            silent=True
-        )
-
-        return AppMonitor.wait_until_ready(
-            package_name,
-            timeout=60
-        )
+        RootExecutor.run(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1", silent=True)
 
     @staticmethod
-    def join_server(package_name,
-                    deep_link,
-                    retry=3):
-
-        print(f"[JOIN] {package_name}")
-
+    def join_server(package_name, deep_link):
         if not deep_link:
-            print("Deep Link kosong.")
             return False
-
-        for attempt in range(1, retry + 1):
-
-            cmd = (
-                'am start '
-                '-a android.intent.action.VIEW '
-                f'-d "{deep_link}" '
-                f'{package_name}'
-            )
-
-            stdout, stderr = RootExecutor.run(
-                cmd,
-                timeout=20,
-                silent=False
-            )
-
-            if "Error" not in stderr:
-
-                print(
-                    f"[OK] Join command terkirim "
-                    f"(Attempt {attempt})"
-                )
-
-                return True
-
-            print(
-                f"[Retry {attempt}/{retry}]"
-            )
-
-            time.sleep(3)
-
-        print("[FAILED] Tidak dapat mengirim Deep Link.")
-
-        return False
+        cmd = f'am start -a android.intent.action.VIEW -d "{deep_link}" {package_name}'
+        _, stderr = RootExecutor.run(cmd, timeout=20, silent=True)
+        return "Error" not in stderr
 
     @staticmethod
     def restart(package_name):
-
         ActionExecutor.force_stop(package_name)
-
-        return ActionExecutor.start_app(package_name)
-
-    @staticmethod
-    def recover(package_name,
-                deep_link):
-
-        print(f"[RECOVER] {package_name}")
-
-        if not ActionExecutor.restart(package_name):
-            return False
-
-        time.sleep(5)
-
-        return ActionExecutor.join_server(
-            package_name,
-            deep_link
-        )
-
+        ActionExecutor.start_app(package_name)
 
 # ==========================================
-# 4. WATCHDOG STATE MACHINE
+# 6. WATCHDOG STATE MACHINE
 # ==========================================
 
 class Watchdog:
-    """Watchdog Sequential untuk Delta Lite Multi Package."""
-
-    def __init__(
-        self,
-        target_packages,
-        server_link,
-        startup_delay=40,
-        retry_limit=3
-    ):
-
+    def __init__(self, target_packages, server_link, retry_limit=3):
         self.packages = target_packages
-
-        self.server_link = URLParser.convert_to_deeplink(
-            server_link
-        )
-
-        self.startup_delay = startup_delay
+        self.server_link = URLParser.convert_to_deeplink(server_link)
         self.retry_limit = retry_limit
 
-        # ===============================
-        # STATUS TIAP PACKAGE
-        # ===============================
-
-        self.package_states = {}
-
-        # Waktu mulai launch Roblox
-        self.startup_timestamps = {}
-
-        # Waktu terakhir join
-        self.last_join_time = {}
-
-        # Jumlah retry join
-        self.retry_counter = {}
-
-        # Cooldown recovery
-        self.recovery_timer = {}
-
-        # Apakah package sudah pernah join
-        self.joined = {}
-
-        # ===============================
-        # INISIALISASI
-        # ===============================
+        self.state = {}
+        self.retry = {}
+        self.timer = {}
+        self.recovery = {}
+        self.startup_timer = {}
+        self.join_timer = {}
+        self.uptime = {}
 
         now = time.time()
-
         for pkg in self.packages:
+            self.state[pkg] = "STATE_INITIALIZING"
+            self.retry[pkg] = 0
+            self.timer[pkg] = now
+            self.recovery[pkg] = 0
+            self.startup_timer[pkg] = 0
+            self.join_timer[pkg] = 0
+            self.uptime[pkg] = 0
 
-            self.package_states[pkg] = "STATE_INITIALIZING"
+    def run_cycle(self):
+        for pkg in self.packages:
+            try:
+                self._process_single_package(pkg)
+            except Exception as e:
+                self.state[pkg] = "STATE_FAILED"
+                print(f"[{Colors.RED}ERROR{Colors.RESET}] {pkg}: {str(e)}")
 
-            self.startup_timestamps[pkg] = 0
+    def _process_single_package(self, pkg):
+        current_state = self.state[pkg]
+        now = time.time()
 
-            self.last_join_time[pkg] = 0
+        if current_state == "STATE_INITIALIZING":
+            self._handle_initializing(pkg, now)
+        elif current_state == "STATE_STARTING":
+            self._handle_starting(pkg, now)
+        elif current_state == "STATE_WAIT_READY":
+            self._handle_wait_ready(pkg, now)
+        elif current_state == "STATE_RUNNING":
+            self._handle_running(pkg, now)
+        elif current_state == "STATE_RECOVERING":
+            self._handle_recovering(pkg, now)
+        elif current_state == "STATE_FAILED" or current_state == "STATE_STOPPED":
+            return 
 
-            self.retry_counter[pkg] = 0
+    def _handle_initializing(self, pkg, now):
+        ActionExecutor.force_stop(pkg)
+        self.state[pkg] = "STATE_STARTING"
+        self.timer[pkg] = now
 
-            self.recovery_timer[pkg] = now
+    def _handle_starting(self, pkg, now):
+        ActionExecutor.start_app(pkg)
+        self.startup_timer[pkg] = now
+        self.state[pkg] = "STATE_WAIT_READY"
+        self.timer[pkg] = now
 
-            self.joined[pkg] = False
+    def _handle_wait_ready(self, pkg, now):
+        if AppMonitor.is_foreground(pkg):
+            if ActionExecutor.join_server(pkg, self.server_link):
+                self.join_timer[pkg] = now
+                self.state[pkg] = "STATE_RUNNING"
+                self.timer[pkg] = now
+                self.retry[pkg] = 0 
+            else:
+                self.state[pkg] = "STATE_RECOVERING"
+                self.timer[pkg] = now
+            return
 
-def process_single_package(self, item):
+        if now - self.startup_timer[pkg] > 45:
+            self.state[pkg] = "STATE_RECOVERING"
+            self.timer[pkg] = now
 
-    state = self.package_states[item]
+    def _handle_running(self, pkg, now):
+        if not AppMonitor.is_alive(pkg):
+            self.state[pkg] = "STATE_RECOVERING"
+            self.timer[pkg] = now
+            return
+            
+        self.uptime[pkg] = int(now - self.join_timer[pkg])
 
-    if state == "STATE_INITIALIZING":
-        # siapkan resource
-        self.package_states[item] = "STATE_STARTING"
-        return
+    def _handle_recovering(self, pkg, now):
+        if self.retry[pkg] >= self.retry_limit:
+            self.state[pkg] = "STATE_FAILED"
+            self.timer[pkg] = now
+            return
 
-    elif state == "STATE_STARTING":
-        # cek apakah aplikasi sudah siap
-        if self.is_ready(item):
-            self.package_states[item] = "STATE_READY"
-        return
+        if now - self.timer[pkg] > 5: 
+            self.retry[pkg] += 1
+            self.recovery[pkg] = now
+            ActionExecutor.force_stop(pkg)
+            self.state[pkg] = "STATE_STARTING"
+            self.timer[pkg] = now
 
-    elif state == "STATE_READY":
-        # jalankan aksi utama
-        success = self.perform_action(item)
+# ==========================================
+# 7. UI FUNCTIONS
+# ==========================================
 
-        if success:
-            self.package_states[item] = "STATE_MONITORING"
+def clear_screen():
+    print("\033[2J\033[H", end="", flush=True)
+
+def print_ascii_art():
+    art = f"""{Colors.CYAN}{Colors.BOLD}
+  ___  _ ___      ___  __  ___ ___ 
+ | _ \| | _ )_   / _ \ \ \/ / |   \\
+ |   /| | _ \ |_| (_) | >  <| | | |
+ |_|_\___|___/___|\___//_/\_\___|___|
+    DELTA LITE MULTI PACKAGE V2
+{Colors.RESET}"""
+    print(art)
+
+def print_divider():
+    print(f"{Colors.WHITE}{'-' * 45}{Colors.RESET}")
+
+def scan_installed_packages():
+    stdout, _ = RootExecutor.run("pm list packages | grep roblox")
+    if not stdout:
+        return []
+    
+    packages = []
+    for line in stdout.splitlines():
+        pkg = line.replace("package:", "").strip()
+        if pkg:
+            packages.append(pkg)
+    return packages
+
+def render_main_menu():
+    print(f"{Colors.BOLD}MAIN MENU{Colors.RESET}")
+    print_divider()
+    print(f"{Colors.GREEN}[1]{Colors.RESET} Start Watchdog")
+    print(f"{Colors.YELLOW}[2]{Colors.RESET} Select Packages")
+    print(f"{Colors.CYAN}[3]{Colors.RESET} Set Deep Link")
+    print(f"{Colors.RED}[4]{Colors.RESET} Exit")
+    print_divider()
+
+def multi_select_menu(available, selected):
+    while True:
+        clear_screen()
+        print_ascii_art()
+        print(f"{Colors.BOLD}SELECT PACKAGES{Colors.RESET}")
+        print_divider()
+        
+        for i, pkg in enumerate(available, 1):
+            status = f"{Colors.GREEN}[X]{Colors.RESET}" if pkg in selected else f"{Colors.RED}[ ]{Colors.RESET}"
+            print(f"{status} {i}. {pkg}")
+            
+        print_divider()
+        print(f"{Colors.YELLOW}[A]{Colors.RESET} Select All  | {Colors.YELLOW}[C]{Colors.RESET} Clear All | {Colors.YELLOW}[0]{Colors.RESET} Back")
+        
+        choice = input(f"\n{Colors.BOLD}Choice:{Colors.RESET} ").strip().lower()
+        
+        if choice == '0':
+            break
+        elif choice == 'a':
+            selected.clear()
+            selected.extend(available)
+        elif choice == 'c':
+            selected.clear()
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(available):
+                target = available[idx]
+                if target in selected:
+                    selected.remove(target)
+                else:
+                    selected.append(target)
+
+def live_watchdog_dashboard(watchdog):
+    print("\033[H", end="", flush=True) 
+    print_ascii_art()
+    print_divider()
+    
+    print(f"{Colors.BOLD}{'PACKAGE':<25} | {'STATE':<18} | {'RTY':<3} | {'UPTIME'}{Colors.RESET}")
+    print_divider()
+    
+    for pkg in watchdog.packages:
+        state = watchdog.state[pkg]
+        retry = watchdog.retry[pkg]
+        uptime = watchdog.uptime[pkg]
+        
+        if state == "STATE_RUNNING":
+            color = Colors.GREEN
+            state_str = "RUNNING"
+        elif state == "STATE_WAIT_READY" or state == "STATE_STARTING":
+            color = Colors.YELLOW
+            state_str = "WAITING" if state == "STATE_WAIT_READY" else "STARTING"
+        elif state == "STATE_FAILED":
+            color = Colors.RED
+            state_str = "FAILED"
+        elif state == "STATE_RECOVERING":
+            color = Colors.YELLOW
+            state_str = "RECOVERING"
         else:
-            self.package_states[item] = "STATE_RECOVERING"
+            color = Colors.BLUE
+            state_str = state.replace("STATE_", "")
 
-        return
+        mins, secs = divmod(uptime, 60)
+        time_str = f"{mins}m {secs}s" if uptime > 0 else "-"
+        
+        pkg_short = pkg.replace("com.", "")[:24]
+        
+        print(f"{color}{pkg_short:<25} | {state_str:<18} | {retry:<3} | {time_str}{Colors.RESET}")
+        
+    print_divider()
+    print(f"{Colors.YELLOW}Press CTRL+C to stop and return to menu.{Colors.RESET}")
 
-    elif state == "STATE_MONITORING":
-        # pantau kondisi
-        if self.needs_recovery(item):
-            self.package_states[item] = "STATE_RECOVERING"
+# ==========================================
+# 8. MAIN LOOP
+# ==========================================
 
-        return
+def main_loop():
+    if not RootExecutor.check_root():
+        print(f"{Colors.RED}Root access not found! Please grant su permissions.{Colors.RESET}")
+        sys.exit(1)
 
-    elif state == "STATE_RECOVERING":
-        ok = self.recover(item)
+    RootExecutor.enable_wakelock()
+    
+    installed_packages = scan_installed_packages()
+    selected_packages = installed_packages.copy()
+    deep_link = ""
 
-        if ok:
-            self.package_states[item] = "STATE_STARTING"
-        else:
-            self.package_states[item] = "STATE_FAILED"
+    while True:
+        try:
+            clear_screen()
+            print_ascii_art()
+            render_main_menu()
+            
+            print(f"{Colors.CYAN}Total Packages:{Colors.RESET} {len(selected_packages)}")
+            link_display = deep_link[:30] + "..." if len(deep_link) > 30 else (deep_link or "Not Set")
+            print(f"{Colors.CYAN}Current Link:{Colors.RESET} {link_display}\n")
+            
+            choice = input(f"{Colors.BOLD}Select menu (1-4):{Colors.RESET} ").strip()
 
-        return
+            if choice == '1':
+                if not selected_packages:
+                    print(f"\n{Colors.RED}Error: No packages selected!{Colors.RESET}")
+                    time.sleep(2)
+                    continue
+                    
+                if not URLParser.validate(deep_link):
+                    print(f"\n{Colors.RED}Error: Invalid or empty Deep Link!{Colors.RESET}")
+                    time.sleep(2)
+                    continue
 
-    elif state == "STATE_FAILED":
-        # menunggu retry manual atau timer
-        return
+                watchdog = Watchdog(selected_packages, deep_link)
+                clear_screen()
+                
+                try:
+                    while True:
+                        watchdog.run_cycle()
+                        live_watchdog_dashboard(watchdog)
+                        time.sleep(2)
+                except KeyboardInterrupt:
+                    clear_screen()
+                    print(f"{Colors.YELLOW}Stopping all processes...{Colors.RESET}")
+                    for pkg in selected_packages:
+                        try:
+                            ActionExecutor.force_stop(pkg)
+                            print(f"{Colors.GREEN}Stopped {pkg}{Colors.RESET}")
+                        except Exception:
+                            pass
+                    time.sleep(2)
+
+            elif choice == '2':
+                multi_select_menu(installed_packages, selected_packages)
+
+            elif choice == '3':
+                print(f"\n{Colors.BOLD}Paste your Roblox Private Server / Share link:{Colors.RESET}")
+                link_input = input("> ").strip()
+                if URLParser.validate(link_input):
+                    deep_link = link_input
+                    print(f"{Colors.GREEN}Link saved successfully!{Colors.RESET}")
+                else:
+                    print(f"{Colors.RED}Invalid link format!{Colors.RESET}")
+                time.sleep(2)
+
+            elif choice == '4':
+                clear_screen()
+                print(f"{Colors.GREEN}Thank you for using Delta Lite Multi Package! Goodbye.{Colors.RESET}\n")
+                sys.exit(0)
+
+        except KeyboardInterrupt:
+            clear_screen()
+            print(f"\n{Colors.GREEN}Exiting program safely... Goodbye!{Colors.RESET}")
+            sys.exit(0)
+        except Exception as e:
+            print(f"\n{Colors.RED}Unexpected error: {str(e)}{Colors.RESET}")
+            time.sleep(3)
+
+if __name__ == "__main__":
+    main_loop()
