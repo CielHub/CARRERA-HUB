@@ -267,11 +267,11 @@ class Watchdog:
 # ==========================================
 
 def clear_screen():
-    # Pakai clear bawaan OS biar bersih tuntas
-    os.system('clear')
+    # Menggunakan \033c untuk Reset Initial State (memperbaiki terminal glitch)
+    print('\033c', end='')
+    sys.stdout.flush()
 
 def print_ascii_art():
-    # Ganti ASCII art ribet dengan header box simpel
     print(f"{Colors.CYAN}{Colors.BOLD}")
     print("=============================================")
     print("         DELTA LITE MULTI PACKAGE V2         ")
@@ -335,12 +335,18 @@ def multi_select_menu(available, selected):
                     selected.append(target)
 
 def live_watchdog_dashboard(watchdog):
-    # Pakai clear_screen() biasa biar nggak ada sisa teks yang numpuk/berbayang
-    clear_screen() 
-    print_ascii_art()
+    clear_screen()
     
-    print(f"{Colors.BOLD}{'PACKAGE':<25} | {'STATE':<18} | {'RTY':<3} | {'UPTIME'}{Colors.RESET}")
-    print_divider()
+    # Kumpulkan semua teks dalam satu buffer string untuk mencegah layar kedip/acak-acakan
+    buffer = []
+    buffer.append(f"{Colors.CYAN}{Colors.BOLD}")
+    buffer.append("=============================================")
+    buffer.append("         DELTA LITE MULTI PACKAGE V2         ")
+    buffer.append("=============================================")
+    buffer.append(f"{Colors.RESET}")
+    buffer.append(f"{Colors.WHITE}{'-' * 45}{Colors.RESET}")
+    buffer.append(f"{Colors.BOLD}{'PACKAGE':<25} | {'STATE':<18} | {'RTY':<3} | {'UPTIME'}{Colors.RESET}")
+    buffer.append(f"{Colors.WHITE}{'-' * 45}{Colors.RESET}")
     
     for pkg in watchdog.packages:
         state = watchdog.state[pkg]
@@ -368,10 +374,13 @@ def live_watchdog_dashboard(watchdog):
         
         pkg_short = pkg.replace("com.", "")[:24]
         
-        print(f"{color}{pkg_short:<25} | {state_str:<18} | {retry:<3} | {time_str}{Colors.RESET}")
+        buffer.append(f"{color}{pkg_short:<25} | {state_str:<18} | {retry:<3} | {time_str}{Colors.RESET}")
         
-    print_divider()
-    print(f"{Colors.YELLOW}Press CTRL+C to stop and return to menu.{Colors.RESET}")
+    buffer.append(f"{Colors.WHITE}{'-' * 45}{Colors.RESET}")
+    buffer.append(f"{Colors.YELLOW}Press CTRL+C to stop and return to menu.{Colors.RESET}")
+    
+    # Cetak sekaligus
+    print('\n'.join(buffer))
 
 # ==========================================
 # 8. MAIN LOOP
