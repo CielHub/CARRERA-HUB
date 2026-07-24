@@ -137,22 +137,27 @@ echo "[+] SEMUA PACKAGE SELESAI DIPROSES."
 echo "[*] Masuk ke Mode Monitoring. Tekan CTRL+C untuk berhenti."
 
 while true; do
+    echo "--- Cek Status ($(date +%H:%M:%S)) ---"
+    
     for pkg in "${PACKAGES[@]}"; do
+        # Simpan output pidof ke dalam variabel untuk dianalisis
+        PIDS=$(pidof "$pkg")
         
-        # Menggunakan pidof yang sekarang sudah di-backup dengan hak akses Root.
-        # Output pidof dibuang ke /dev/null. Jika proses tidak ada, exit code adalah 1 (false).
-        if ! pidof "$pkg" > /dev/null; then
-            echo "[!] CRASH DETECTED: $pkg terhenti (Process utama tidak ditemukan)!"
+        # Cek apakah string PIDS kosong
+        if [ -z "$PIDS" ]; then
+            echo "[DEBUG] $pkg -> MATI (Process tidak ditemukan)"
+            echo "[!] CRASH DETECTED: $pkg terhenti!"
             echo "[*] Menjalankan Recovery untuk $pkg..."
             
-            # Panggil ulang fungsi launch untuk package yang crash
             launch_and_wait "$pkg"
             
             echo "[*] Recovery selesai. Kembali memantau..."
+        else
+            # Jika tidak kosong, tampilkan angka PID yang terdeteksi
+            echo "[DEBUG] $pkg -> HIDUP (PIDs: $PIDS)"
         fi
-        
     done
     
-    # Cek setiap 15 detik agar tidak membebani CPU
+    # Cek setiap 15 detik
     sleep 15
 done
