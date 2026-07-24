@@ -267,17 +267,16 @@ class Watchdog:
 # ==========================================
 
 def clear_screen():
-    print("\033[2J\033[H", end="", flush=True)
+    # Pakai clear bawaan OS biar bersih tuntas
+    os.system('clear')
 
 def print_ascii_art():
-    art = f"""{Colors.CYAN}{Colors.BOLD}
-  ___  _ ___      ___  __  ___ ___ 
- | _ \| | _ )_   / _ \ \ \/ / |   \\
- |   /| | _ \ |_| (_) | >  <| | | |
- |_|_\___|___/___|\___//_/\_\___|___|
-    DELTA LITE MULTI PACKAGE V2
-{Colors.RESET}"""
-    print(art)
+    # Ganti ASCII art ribet dengan header box simpel
+    print(f"{Colors.CYAN}{Colors.BOLD}")
+    print("=============================================")
+    print("         DELTA LITE MULTI PACKAGE V2         ")
+    print("=============================================")
+    print(f"{Colors.RESET}")
 
 def print_divider():
     print(f"{Colors.WHITE}{'-' * 45}{Colors.RESET}")
@@ -336,9 +335,9 @@ def multi_select_menu(available, selected):
                     selected.append(target)
 
 def live_watchdog_dashboard(watchdog):
-    print("\033[H", end="", flush=True) 
+    # Pakai clear_screen() biasa biar nggak ada sisa teks yang numpuk/berbayang
+    clear_screen() 
     print_ascii_art()
-    print_divider()
     
     print(f"{Colors.BOLD}{'PACKAGE':<25} | {'STATE':<18} | {'RTY':<3} | {'UPTIME'}{Colors.RESET}")
     print_divider()
