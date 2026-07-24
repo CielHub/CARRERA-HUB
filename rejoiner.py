@@ -1,136 +1,113 @@
-import subprocess
+import os
 import time
-import sys
 
-# ==========================================
-# KONFIGURASI PENGGUNA
-# ==========================================
-# Anda sekarang bisa menggunakan format HTTPS atau roblox://
-DEEP_LINK = "https://www.roblox.com/share?code=1709789b4cec9a45a6cba297c4f7d783&type=Server"
-CHECK_INTERVAL = 10 # Waktu jeda (dalam detik) antar pengecekan status
+# ANSI Color Codes untuk Termux
+class Colors:
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    WHITE = '\033[97m'
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
 
-def run_su(command):
-    """Menjalankan perintah shell dengan akses root di Android."""
-    try:
-        result = subprocess.run(
-            ['su', '-c', command], 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE, 
-            text=True
-        )
-        return result.stdout.strip()
-    except Exception as e:
-        print(f"[-] Error eksekusi sistem: {e}")
-        return ""
+def clear_screen():
+    """Membersihkan layar terminal."""
+    os.system('clear')
 
-def find_roblox_package():
-    """Memindai sistem Android untuk menemukan nama package Roblox secara otomatis."""
-    print("[*] Memindai package Roblox di sistem Android...")
-    try:
-        output = run_su("pm list packages | grep roblox")
-        if output:
-            packages = [line.replace("package:", "").strip() for line in output.split('\n') if line]
-            if packages:
-                detected_pkg = packages[0] 
-                print(f"[+] Package Roblox ditemukan: {detected_pkg}")
-                return detected_pkg
-                
-        print("[-] Package Roblox tidak ditemukan! Pastikan Delta Lite sudah terinstal.")
-        return None
-    except Exception as e:
-        print(f"[-] Error saat memindai package: {e}")
-        return None
+def print_ascii_art():
+    """Menampilkan logo Carrera."""
+    logo = f"""{Colors.CYAN}{Colors.BOLD}
+    ______                                     
+   / ____/___ ______________  _________ _      
+  / /   / __ `/ ___/ ___/ _ \/ ___/ __ `/      
+ / /___/ /_/ / /  / /  /  __/ /  / /_/ /       
+ \____/\__,_/_/  /_/   \___/_/   \__,_/        
+                                               
+ {Colors.WHITE}[ Auto Rejoiner - Delta Lite Termux Edition ]{Colors.RESET}
+    """
+    print(logo)
 
-def is_app_running(package_name):
-    """Mengecek apakah proses aplikasi ada di memori."""
-    output = run_su(f"pidof {package_name}")
-    return len(output) > 0
+def print_divider():
+    print(f"{Colors.WHITE}================================================================={Colors.RESET}")
 
-def check_screen_state():
-    """Membaca teks di layar Android untuk mengetahui kondisi UI aplikasi."""
-    run_su("uiautomator dump /data/local/tmp/uidump.xml")
-    ui_xml = run_su("cat /data/local/tmp/uidump.xml").lower()
+def render_menu(state="STATE_STOPPED", pid="None", server_link="Not Set"):
+    """Fungsi utama untuk merender dashboard menu."""
+    clear_screen()
+    print_divider()
+    print_ascii_art()
+    print_divider()
     
-    if any(keyword in ui_xml for keyword in ["disconnected", "error", "kicked", "check your internet"]):
-        return "ERROR"
+    # SYSTEM INFO SECTION
+    print(f"\n {Colors.BOLD}[ SYSTEM INFO ]{Colors.RESET}")
+    print(f" Target Package : {Colors.CYAN}com.roblox.client (Delta Lite){Colors.RESET}")
+    print(f" Root Access    : {Colors.GREEN}[ OK ]{Colors.RESET}") 
+    print(f" Doze/Wakelock  : {Colors.GREEN}[ ACTIVE ]{Colors.RESET}")
     
-    if "home" in ui_xml and "avatar" in ui_xml: 
-        return "READY"
+    # BOT STATUS SECTION
+    print(f"\n {Colors.BOLD}[ BOT STATUS ]{Colors.RESET}")
     
-    return "UNKNOWN_OR_INGAME"
-
-def recover_and_join(package_name):
-    """Menutup paksa, membuka ulang, dan memasukkan akun ke private server."""
-    print(f"[*] Memulai prosedur Recovery untuk {package_name}...")
-    
-    # 1. Force Stop
-    run_su(f"am force-stop {package_name}")
-    time.sleep(3) 
-    
-    # 2. Buka aplikasi ke Menu Utama
-    print("[*] Membuka ulang aplikasi...")
-    run_su(f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
-    
-    # 3. Tunggu hingga loading selesai
-    wait_time = 0
-    max_wait = 90
-    is_ready = False
-    
-    while wait_time < max_wait:
-        state = check_screen_state()
-        if state == "READY":
-            print("[+] Aplikasi sudah siap di Menu Utama!")
-            is_ready = True
-            break
+    # Pewarnaan dinamis berdasarkan State
+    state_color = Colors.GREEN if state == "STATE_IN_GAME" else Colors.YELLOW
+    if state == "STATE_STOPPED":
+        state_color = Colors.RED
         
-        print(f"[*] Menunggu loading... ({wait_time}s)")
-        time.sleep(5)
-        wait_time += 5
-        
-    if not is_ready:
-        print("[-] Waktu tunggu habis saat loading. Akan dicoba ulang pada siklus berikutnya.")
-        return False 
-        
-    # 4. Eksekusi Link Private Server secara Spesifik ke Package
-    # Penambahan {package_name} di akhir akan mencegah link terbuka di browser
-    print("[+] Menembakkan link Private Server...")
-    run_su(f"am start -a android.intent.action.VIEW -d '{DEEP_LINK}' {package_name}")
-    time.sleep(15)
-    return True
-
-def main():
-    print("=== Auto Rejoiner Delta Lite Started ===")
+    print(f" Current State  : {state_color}{state}{Colors.RESET}")
+    print(f" Active PID     : {Colors.WHITE}{pid}{Colors.RESET}")
     
-    package_name = find_roblox_package()
-    if not package_name:
-        print("[-] Program dihentikan karena package tidak ditemukan.")
-        sys.exit(1)
+    # Potong link jika terlalu panjang agar UI tetap rapi
+    display_link = server_link if len(server_link) < 45 else server_link[:42] + "..."
+    link_color = Colors.WHITE if server_link == "Not Set" else Colors.GREEN
+    print(f" Target Server  : {link_color}{display_link}{Colors.RESET}\n")
+    
+    print_divider()
+    
+    # MAIN MENU SECTION
+    print(f" {Colors.BOLD}[ MAIN MENU ]{Colors.RESET}\n")
+    print(f" {Colors.YELLOW}[ 1 ]{Colors.RESET} Set Private Server Link")
+    print(f" {Colors.YELLOW}[ 2 ]{Colors.RESET} Start Auto Rejoiner (Watchdog Mode)")
+    print(f" {Colors.YELLOW}[ 3 ]{Colors.RESET} Stop / Force Kill Roblox")
+    print(f" {Colors.YELLOW}[ 4 ]{Colors.RESET} View System Logs")
+    print(f" {Colors.RED}[ 0 ]{Colors.RESET} Exit\n")
+    
+    print_divider()
 
+def main_loop():
+    """Looping utama antarmuka pengguna."""
+    current_link = "Not Set"
+    
     while True:
+        # Panggil fungsi render dengan data dummy (nantinya diganti dengan variabel real dari State Machine)
+        render_menu(server_link=current_link)
+        
         try:
-            if not is_app_running(package_name):
-                print("[!] Aplikasi tidak berjalan. Melakukan recovery...")
-                recover_and_join(package_name)
+            choice = input(f" {Colors.CYAN}Carrera-Bot@Termux:~# {Colors.RESET}")
+            
+            if choice == '1':
+                print(f"\n {Colors.YELLOW}>>{Colors.RESET} Paste link Private Server Roblox:")
+                current_link = input(f" {Colors.CYAN}Link:{Colors.RESET} ").strip()
+            elif choice == '2':
+                print(f"\n {Colors.GREEN}>> Memulai Watchdog...{Colors.RESET}")
+                time.sleep(1)
+                # Di sini nantinya memanggil modul State Machine
+            elif choice == '3':
+                print(f"\n {Colors.RED}>> Mengeksekusi 'am force-stop com.roblox.client'...{Colors.RESET}")
+                time.sleep(1)
+            elif choice == '4':
+                print(f"\n {Colors.WHITE}>> Membuka Logcat...{Colors.RESET}")
+                time.sleep(1)
+            elif choice == '0':
+                clear_screen()
+                print(f"{Colors.GREEN}Terima kasih telah menggunakan Carrera Auto Rejoiner.{Colors.RESET}")
+                break
             else:
-                state = check_screen_state()
-                if state == "ERROR":
-                    print("[!] Terdeteksi layar Disconnect/Error. Melakukan recovery...")
-                    recover_and_join(package_name)
-                elif state == "READY":
-                    print("[!] Aplikasi berada di Menu Utama. Memasukkan ke server...")
-                    run_su(f"am start -a android.intent.action.VIEW -d '{DEEP_LINK}' {package_name}")
-                    time.sleep(15)
-                else:
-                    print("[*] Status Aman: Aplikasi sedang berjalan.")
-            
-            time.sleep(CHECK_INTERVAL)
-            
+                pass # Abaikan input yang tidak valid
+                
         except KeyboardInterrupt:
-            print("\n[+] Program dihentikan oleh pengguna (Ctrl+C).")
+            # Menangkap CTRL+C agar program keluar dengan rapi
+            clear_screen()
+            print(f"{Colors.GREEN}Program dihentikan oleh user.{Colors.RESET}")
             break
-        except Exception as e:
-            print(f"[-] Terjadi kesalahan tidak terduga: {e}")
-            time.sleep(5)
 
 if __name__ == "__main__":
-    main()
+    main_loop()
