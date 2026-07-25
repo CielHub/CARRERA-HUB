@@ -11,33 +11,32 @@ from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
 from core.monitor import get_pid
 
-# Impor Layout Engine
 from core.ui import console, reset_terminal, draw_header, show_transition, draw_footer
 from rich.prompt import Prompt
 from rich.table import Table
-from rich.align import Align
+from rich.padding import Padding
 
 def pause():
     draw_footer("Enter  Kembali ke Menu Test")
     console.input("\n[dim]Tekan Enter...[/]")
 
 def test_root():
-    console.print("\n[dim]--- TEST ROOT ---[/]", justify="center")
+    console.print(Padding("\n[dim]--- TEST ROOT ---[/]", (0, 0, 0, 4)))
     try:
         uid = int(subprocess.check_output(['id', '-u']).decode('utf-8').strip())
     except Exception:
         import os
         uid = os.geteuid()
         
-    console.print(f"\n[white]Current UID:[/] [cyan]{uid}[/]", justify="center")
+    console.print(Padding(f"\n[white]Current UID:[/] [cyan]{uid}[/]", (0, 0, 0, 4)))
     if uid == 0:
-        console.print("[bold green][OK] Sistem berjalan sebagai Root.[/]", justify="center")
+        console.print(Padding("[bold green][OK] Sistem berjalan sebagai Root.[/]", (0, 0, 0, 4)))
     else:
-        console.print("[bold red][FAIL] Sistem TIDAK berjalan sebagai Root.[/]", justify="center")
+        console.print(Padding("[bold red][FAIL] Sistem TIDAK berjalan sebagai Root.[/]", (0, 0, 0, 4)))
     pause()
 
 def test_config():
-    console.print("\n[dim]--- TEST CONFIG ---[/]", justify="center")
+    console.print(Padding("\n[dim]--- TEST CONFIG ---[/]", (0, 0, 0, 4)))
     config_data = load_config("config.conf")
     
     table = Table(box=None, padding=(0, 2), show_header=False, expand=False)
@@ -45,74 +44,74 @@ def test_config():
         table.add_row(f"[white]{key}[/]", f"[cyan]{value}[/]")
     
     console.print("\n")
-    console.print(Align.center(table))
-    console.print("\n[bold green][OK] Config berhasil dibaca.[/]", justify="center")
+    console.print(Padding(table, (0, 0, 0, 4)))
+    console.print(Padding("\n[bold green][OK] Config berhasil dibaca.[/]", (0, 0, 0, 4)))
     pause()
 
 def test_logger():
-    console.print("\n[dim]--- TEST LOGGER ---[/]", justify="center")
-    console.print("\n[white]Menulis pesan test ke dalam log...[/]", justify="center")
+    console.print(Padding("\n[dim]--- TEST LOGGER ---[/]", (0, 0, 0, 4)))
+    console.print(Padding("\n[white]Menulis pesan test ke dalam log...[/]", (0, 0, 0, 4)))
     log.info("TESTING: Ini adalah pesan uji coba dari modul tester.py")
     log.warning("TESTING: Ini adalah pesan warning.")
     log.error("TESTING: Ini adalah pesan error.")
-    console.print("\n[bold green][OK] Silakan cek file logs/latest.log untuk melihat hasilnya.[/]", justify="center")
+    console.print(Padding("\n[bold green][OK] Silakan cek file logs/latest.log untuk melihat hasilnya.[/]", (0, 0, 0, 4)))
     pause()
 
 def test_scanner():
-    console.print("\n[dim]--- TEST SCANNER ---[/]", justify="center")
+    console.print(Padding("\n[dim]--- TEST SCANNER ---[/]", (0, 0, 0, 4)))
     packages = get_roblox_packages()
     if packages:
-        console.print("\n[bold green][OK] Scanner berfungsi dan menemukan package.[/]", justify="center")
+        console.print(Padding("\n[bold green][OK] Scanner berfungsi dan menemukan package.[/]", (0, 0, 0, 4)))
     pause()
 
 def test_deeplink():
-    console.print("\n[dim]--- TEST DEEP LINK ---[/]", justify="center")
+    console.print(Padding("\n[dim]--- TEST DEEP LINK ---[/]", (0, 0, 0, 4)))
     config_data = load_config("config.conf")
     link = config_data.get("PRIVATE_SERVER_LINK", "")
-    console.print(f"\n[white]Link Asli:[/] [cyan]{link}[/]", justify="center")
+    console.print(Padding(f"\n[white]Link Asli:[/] [cyan]{link}[/]", (0, 0, 0, 4)))
     intent_url = get_intent_url(link)
-    console.print(f"[white]Intent URL:[/] [cyan]{intent_url}[/]", justify="center")
+    console.print(Padding(f"[white]Intent URL:[/] [cyan]{intent_url}[/]", (0, 0, 0, 4)))
     if intent_url:
-        console.print("\n[bold green][OK] Deep Link konversi berhasil.[/]", justify="center")
+        console.print(Padding("\n[bold green][OK] Deep Link konversi berhasil.[/]", (0, 0, 0, 4)))
     pause()
 
 def test_launcher():
-    console.print("\n[dim]--- TEST LAUNCHER ---[/]", justify="center")
+    console.print(Padding("\n[dim]--- TEST LAUNCHER ---[/]", (0, 0, 0, 4)))
     packages = get_roblox_packages()
     if not packages:
-        console.print("\n[bold red][!] Tidak ada package untuk dites.[/]", justify="center")
+        console.print(Padding("\n[bold red][!] Tidak ada package untuk dites.[/]", (0, 0, 0, 4)))
         pause()
         return
         
     pkg = packages[0]
-    console.print(f"\n[white]Akan melakukan test launch pada:[/] [cyan]{pkg}[/]", justify="center")
+    console.print(Padding(f"\n[white]Akan melakukan test launch pada:[/] [cyan]{pkg}[/]", (0, 0, 0, 4)))
     config_data = load_config("config.conf")
     intent_url = get_intent_url(config_data["PRIVATE_SERVER_LINK"])
     
-    console.print("\n[dim]Mengeksekusi Launch & Smart Wait...[/]", justify="center")
+    console.print(Padding("\n[dim]Mengeksekusi Launch & Smart Wait...[/]", (0, 0, 0, 4)))
     success = launch_and_wait(pkg, intent_url, config_data["TIMEOUT_SECONDS"])
     
     if success:
-        console.print("\n[bold green][OK] Launcher mengembalikan nilai True (Sukses).[/]", justify="center")
+        console.print(Padding("\n[bold green][OK] Launcher mengembalikan nilai True (Sukses).[/]", (0, 0, 0, 4)))
     else:
-        console.print("\n[bold red][FAIL] Launcher mengembalikan nilai False (Gagal).[/]", justify="center")
+        console.print(Padding("\n[bold red][FAIL] Launcher mengembalikan nilai False (Gagal).[/]", (0, 0, 0, 4)))
     pause()
 
 def test_monitor():
-    console.print("\n[dim]--- TEST MONITORING ---[/]", justify="center")
+    console.print(Padding("\n[dim]--- TEST MONITOR ---[/]", (0, 0, 0, 4)))
     packages = get_roblox_packages()
     if not packages:
-        console.print("\n[bold red][!] Tidak ada package untuk dites.[/]", justify="center")
+        console.print(Padding("\n[bold red][!] Tidak ada package untuk dites.[/]", (0, 0, 0, 4)))
         pause()
         return
         
-    console.print("\n[white]Mencari PID aktif untuk package yang terdeteksi:[/]", justify="center")
+    console.print(Padding("\n[white]Mencari PID aktif untuk package yang terdeteksi:[/]", (0, 0, 0, 4)))
     for pkg in packages:
         pid = get_pid(pkg)
         if pid:
-            console.print(f"[bold green][OK] {pkg} SEDANG BERJALAN (PID: {pid})[/]", justify="center")
+            console.print(Padding(f"[bold green][OK] {pkg} SEDANG BERJALAN (PID: {pid})[/]", (0, 0, 0, 4)))
         else:
-            console.print(f"[bold red][INFO] {pkg} SEDANG MATI[/]", justify="center")
+            console.print(Padding(f"[bold red][INFO] {pkg} SEDANG MATI[/]", (0, 0, 0, 4)))
     pause()
 
 def show_test_menu():
@@ -136,7 +135,8 @@ def show_test_menu():
         table.add_row("[7]", "📊", "Test Monitor (PID Check)", ">")
         table.add_row("[8]", "↩ ", "Kembali", ">")
         
-        console.print(Align.center(table))
+        # Diubah menjadi Rata Kiri dengan padding 4 spasi
+        console.print(Padding(table, (0, 0, 0, 4)))
         draw_footer("ESC / 8  Back to Menu")
         
         choice = Prompt.ask("\n[dim]Pilih test (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
@@ -155,4 +155,4 @@ def show_test_menu():
         elif choice == '5': test_deeplink()
         elif choice == '6': test_launcher()
         elif choice == '7': test_monitor()
-            
+        
