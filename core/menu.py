@@ -14,15 +14,14 @@ from core.launcher import launch_and_wait
 from core.monitor import start_monitoring
 from core.tester import show_test_menu
 
-from core.ui import console, reset_terminal, get_compact_header, draw_header, show_transition, draw_footer
+from core.ui import console, reset_terminal, get_compact_header, draw_header, show_transition, draw_footer, LAYOUT_WIDTH
 from rich.prompt import Prompt
 from rich.table import Table
-from rich.padding import Padding
 
 def run_auto_rejoiner():
     reset_terminal()
     console.print(get_compact_header(status="Initializing"))
-    console.print("\n[bold yellow]==== MENJALANKAN AUTO REJOINER ====[/]\n", justify="center")
+    console.print("\n[bold yellow]==== MENJALANKAN AUTO REJOINER ====[/]\n")
     
     config_data = load_config("config.conf")
     timeout_seconds = config_data.get("TIMEOUT_SECONDS", 45)
@@ -66,24 +65,23 @@ def show_settings():
         draw_header("SETTINGS")
         
         link = config_data.get('PRIVATE_SERVER_LINK', '')
-        display_link = link[:20] + "..." if len(link) > 20 else link
+        display_link = link[:22] + "..." if len(link) > 22 else link
         
-        table = Table(box=None, padding=(0, 2), show_header=False, expand=False)
-        table.add_column("No", style="bold cyan", justify="right")
-        table.add_column("Icon", style="white", justify="center")
-        table.add_column("Config", style="white", justify="left")
-        table.add_column("Value", style="dim white", justify="right")
+        table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
+        table.add_column("No", style="bold cyan", width=4)
+        table.add_column("Icon", style="white", width=3)
+        table.add_column("Config", style="white", width=20)
+        table.add_column("Value", style="dim white", justify="right", width=33)
         
         table.add_row("[1]", "🔗", "Server Link", f"[cyan]{display_link}[/]")
-        table.add_row("[2]", "⏱ ", "Timeout Wait", f"[cyan]{config_data.get('TIMEOUT_SECONDS', 45)}s[/]")
+        table.add_row("[2]", "⏱", "Timeout Wait", f"[cyan]{config_data.get('TIMEOUT_SECONDS', 45)}s[/]")
         table.add_row("[3]", "⏳", "Delay Package", f"[cyan]{config_data.get('DELAY_SECONDS', 3)}s[/]")
         table.add_row("[4]", "🔄", "Max Retries", f"[cyan]{config_data.get('MAX_RETRIES', 3)}x[/]")
-        table.add_row("[5]", "❄ ", "Cooldown", f"[cyan]{config_data.get('COOLDOWN_SECONDS', 300)}s[/]")
+        table.add_row("[5]", "❄", "Cooldown", f"[cyan]{config_data.get('COOLDOWN_SECONDS', 300)}s[/]")
         table.add_row("[6]", "💾", "Simpan Config", ">")
-        table.add_row("[7]", "↩ ", "Kembali", ">")
+        table.add_row("[7]", "↩", "Kembali", ">")
         
-        # Diubah menjadi Rata Kiri dengan padding 4 spasi
-        console.print(Padding(table, (0, 0, 0, 4)))
+        console.print(table)
         draw_footer("ESC / 7  Back to Menu")
         
         choice = Prompt.ask("\n[dim]Pilih (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
@@ -114,11 +112,11 @@ def show_main_menu():
         reset_terminal()
         draw_header("MENU UTAMA")
         
-        table = Table(box=None, padding=(0, 2), show_header=False, expand=False)
-        table.add_column("No", style="bold cyan", justify="right")
-        table.add_column("Icon", style="white", justify="center")
-        table.add_column("Menu", style="white", justify="left")
-        table.add_column("Chevron", style="dim white", justify="right")
+        table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
+        table.add_column("No", style="bold cyan", width=4)
+        table.add_column("Icon", style="white", width=3)
+        table.add_column("Menu", style="white", width=50)
+        table.add_column("Chevron", style="dim white", justify="right", width=3)
         
         table.add_row("[1]", "▶", "Auto Rejoiner", ">")
         table.add_row("[2]", "⚙", "Settings", ">")
@@ -127,8 +125,7 @@ def show_main_menu():
         table.add_row("[5]", "ⓘ", "About", ">")
         table.add_row("[bold red][6][/]", "[red]⏻[/]", "[red]Exit[/]", "[red]>[/]")
         
-        # Diubah menjadi Rata Kiri dengan padding 4 spasi
-        console.print(Padding(table, (0, 0, 0, 4)))
+        console.print(table)
         draw_footer("CTRL+C  Dashboard    CTRL+Z  Exit")
         
         choice = Prompt.ask("\n[dim]Pilih menu (1-6)[/]", choices=["1", "2", "3", "4", "5", "6"])
@@ -149,11 +146,11 @@ def show_main_menu():
             
             log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "latest.log")
             if os.path.exists(log_path):
-                console.print(Padding("[dim]Menampilkan 20 baris terakhir...[/]", (0, 0, 0, 4)))
+                console.print("[dim]Menampilkan 20 baris terakhir...[/]")
                 console.print("")
                 os.system(f"tail -n 20 {log_path}")
             else:
-                console.print(Padding("[dim]File log belum tersedia.[/]", (0, 0, 0, 4)))
+                console.print("[dim]File log belum tersedia.[/]")
             
             draw_footer("Enter  Back to Menu")
             console.input("\n[dim]Tekan Enter...[/]")
@@ -162,14 +159,16 @@ def show_main_menu():
             reset_terminal()
             draw_header("ABOUT")
             
-            table = Table(box=None, padding=(0, 3), show_header=False, expand=False)
-            table.add_row("[dim]Aplikasi[/]", "[bold white]CARRERA-HUB Auto Rejoiner[/]")
-            table.add_row("[dim]Versi[/]", "[bold cyan]Python Modular Edition[/]")
-            table.add_row("[dim]Status[/]", "[bold green]Stabil & Termux Root Ready[/]")
-            table.add_row("[dim]Developer[/]", "[bold magenta]Carrera-Hub Team[/]")
+            table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
+            table.add_column("Key", style="dim white", width=15)
+            table.add_column("Value", style="bold white", width=45)
             
-            # Diubah menjadi Rata Kiri dengan padding 4 spasi
-            console.print(Padding(table, (0, 0, 0, 4)))
+            table.add_row("Aplikasi", "CARRERA-HUB Auto Rejoiner")
+            table.add_row("Versi", "[cyan]Python Modular Edition[/]")
+            table.add_row("Status", "[green]Stabil & Termux Root Ready[/]")
+            table.add_row("Developer", "[magenta]Carrera-Hub Team[/]")
+            
+            console.print(table)
             draw_footer("Enter  Back to Menu")
             console.input("\n[dim]Tekan Enter...[/]")
         elif choice == '6':
