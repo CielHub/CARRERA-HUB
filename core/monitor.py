@@ -9,8 +9,7 @@ import sys
 from core.logger import log
 from core.launcher import launch_and_wait
 
-# [UX UPGRADE] Tambahkan reset_terminal dari core.ui
-from core.ui import console, get_header, reset_terminal
+from core.ui import console, get_compact_header, reset_terminal
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
@@ -32,56 +31,62 @@ def format_uptime(start_time, current_time):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def draw_dashboard(stats, current_time, pkg_count):
-    """Membangun layout Tabel dan Header untuk Live Dashboard."""
-    header = get_header(package_count=str(pkg_count), status="Monitoring")
+    """Membangun layout Tabel Fixed-Width yang sangat compact."""
+    header = get_compact_header(pkg_count=str(pkg_count), status="Monitoring")
     
-    table = Table(box=box.ASCII, expand=True, border_style="bold white")
-    table.add_column("PACKAGE", justify="left", style="white")
-    table.add_column("PID", justify="center", style="cyan")
-    table.add_column("STATUS", justify="center", style="bold")
-    table.add_column("UPTIME", justify="center", style="white")
-    table.add_column("L", justify="center", style="dim white")
-    table.add_column("R", justify="center", style="dim white")
-    table.add_column("C", justify="center", style="dim white")
+    # expand=False agar tabel tidak melebar mengikuti terminal, mengunci layout
+    table = Table(box=box.SIMPLE_HEAD, expand=False, show_edge=False, pad_edge=False)
+    
+    # Menetapkan lebar pasti (fixed width) setiap kolom
+    table.add_column("PACKAGE", width=18, justify="left", style="white")
+    table.add_column("PID", width=7, justify="right", style="cyan")
+    table.add_column("STATUS", width=12, justify="left")
+    table.add_column("UPTIME", width=8, justify="right", style="white")
+    table.add_column("L", width=3, justify="right", style="dim white")
+    table.add_column("R", width=3, justify="right", style="dim white")
+    table.add_column("C", width=3, justify="right", style="dim white")
 
     for pkg, s in stats.items():
         uptime_str = format_uptime(s['uptime_start'], current_time) if s['status'] == 'ONLINE' else "--:--:--"
         
-        # Color mapping berdasarkan ketentuan
-        status_color = "green"
-        if s['status'] == 'LOADING': status_color = "yellow"
-        elif s['status'] == 'RECOVERY': status_color = "blue"
-        elif s['status'] == 'FAILED': status_color = "red"
-        elif s['status'] == 'COOLDOWN': status_color = "magenta"
+        # Potong 'com.roblox.' agar tampilan lebih bersih
+        display_pkg = pkg.replace("com.roblox.", "..") if "com.roblox." in pkg else pkg
         
-        status_formatted = f"[{status_color}]{s['status']}[/]"
-        
+        # Logika warna dan highlight baris
+        row_style = ""
+        if s['status'] == 'ONLINE':
+            stat_fmt = "[bold green]● ONLINE[/]"
+        elif s['status'] == 'LOADING':
+            stat_fmt = "[bold yellow]● LOADING[/]"
+            row_style = "dim"
+        elif s['status'] == 'RECOVERY':
+            stat_fmt = "[bold blue]● RECOVERY[/]"
+            row_style = "blue"
+        elif s['status'] == 'FAILED':
+            stat_fmt = "[bold red]● FAILED[/]"
+            row_style = "red"
+        elif s['status'] == 'COOLDOWN':
+            stat_fmt = "[bold magenta]● COOLDOWN[/]"
+            row_style = "magenta"
+        else:
+            stat_fmt = f"[white]● {s['status']}[/]"
+
         table.add_row(
-            pkg,
-            str(s['pid']),
-            status_formatted,
-            uptime_str,
-            str(s['launch_count']),
-            str(s['recovery_count']),
-            str(s['crash_count'])
+            display_pkg, str(s['pid']), stat_fmt, uptime_str,
+            str(s['launch_count']), str(s['recovery_count']), str(s['crash_count']),
+            style=row_style
         )
         
     footer = Text.from_markup(
-        "\n[dim]Keterangan: L = Launch Count, R = Recovery Count, C = Crash Count[/]\n"
-        "[bold yellow]Tekan CTRL+C untuk menghentikan monitoring dan kembali ke Menu Utama.[/]", 
+        "\n[dim white]L=Launch  R=Recovery  C=Crash   |   [bold yellow]CTRL+C: Menu Utama[/][/]", 
         justify="center"
     )
     
-    return Group(header, table, footer)
+    return Group(header, Text(""), table, footer)
 
 def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None):
-    # 1. Cetak log transisi
     log.info("MONITORING: Semua package selesai diproses. Memasuki mode penjagaan...")
-    
-    # 2. Beri jeda 1 detik agar log terakhir sempat terbaca oleh user
     time.sleep(1)
-    
-    # 3. Bersihkan seluruh layar terminal sebelum Dashboard mengambil alih
     reset_terminal()
 
     current_time = time.time()
@@ -104,7 +109,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     last_check_time = current_time
     STABILITY_THRESHOLD = 300 
 
-    # [UI UPGRADE] Membungkus loop dengan Live renderer (Mulai dari layar yang sudah bersih)
     with Live(draw_dashboard(stats, current_time, pkg_count), console=console, refresh_per_second=1, transient=False) as live:
         try:
             while True:
@@ -132,15 +136,13 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
 
                             stats[pkg]['status'] = 'RECOVERY'
                             stats[pkg]['pid'] = '-'
-                            # Update UI sebelum memanggil fungsi blocking launch_and_wait
                             live.update(draw_dashboard(stats, current_time, pkg_count))
                             
-                            # Log error saat Live Dashboard aktif akan di-handle oleh logger agar tidak merusak layout
                             log.error(f"CRASH DETECTED: {pkg} terhenti!")
                             log.info(f"RECOVERY: Percobaan pemulihan {stats[pkg]['consecutive_crashes']}/{max_retries} untuk {pkg}...")
                             
                             success = launch_and_wait(pkg, intent_url, timeout_seconds)
-                            current_time = time.time() # Resync waktu 
+                            current_time = time.time() 
                             
                             if success:
                                 new_pid = get_pid(pkg)
@@ -167,11 +169,9 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                     
                     last_check_time = current_time
 
-                # Refresh UI per detik
                 live.update(draw_dashboard(stats, current_time, pkg_count))
                 time.sleep(1)
                 
         except KeyboardInterrupt:
-            # Tidak mencetak error, langsung kembali ke menu
             pass
-            
+                                
