@@ -7,10 +7,10 @@ import sys
 import subprocess
 import time
 
-# Tambahkan absolute path project ke system path agar import core/ berfungsi
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 
+from core.logger import log  # Import logger
 from core.config import load_config
 from core.deeplink import get_intent_url
 from core.scanner import get_roblox_packages
@@ -33,39 +33,39 @@ def ensure_root():
         exit_code = subprocess.call(cmd, shell=True)
         
         if exit_code != 0:
-            print("-" * 48)
-            print("[!] Gagal mendapatkan akses Root.")
+            print("[!] Gagal mendapatkan akses Root. Pastikan HP sudah di-root.")
             sys.exit(1)
             
         sys.exit(0)
 
 def main():
     """Fungsi Orkestrasi Utama."""
-    # 0. Set direktori & Auto Root
     os.chdir(SCRIPT_DIR)
     ensure_root()
     
-    # 1. Load Config
+    # [LOG STARTUP]
+    log.info("STARTUP: Menginisialisasi CARRERA-HUB Auto Rejoiner...")
+    
     config_data = load_config("config.conf")
     timeout_seconds = config_data["TIMEOUT_SECONDS"]
     
-    # 2. Parse Deep Link
     intent_url = get_intent_url(config_data["PRIVATE_SERVER_LINK"])
-    print("[+] Target Intent yang akan dieksekusi:")
-    print(f"    -> {intent_url}")
-    print("-" * 48)
+    log.info(f"Target Intent: {intent_url}")
     
-    # 3. Scan Packages
     packages = get_roblox_packages()
     
-    # 4. Eksekusi Sequential
     for pkg in packages:
         launch_and_wait(pkg, intent_url, timeout_seconds)
         time.sleep(3)
         
-    # 5. Mulai Monitoring
     start_monitoring(packages, intent_url, timeout_seconds)
 
 if __name__ == "__main__":
-    main()
-  
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("") # Jarak enter
+        # [LOG SHUTDOWN]
+        log.info("SHUTDOWN: Script dihentikan oleh user (CTRL+C).")
+        sys.exit(0)
+        
