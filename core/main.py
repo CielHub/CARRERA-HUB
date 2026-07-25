@@ -31,11 +31,30 @@ def run_auto_rejoiner():
     intent_url = get_intent_url(config_data["PRIVATE_SERVER_LINK"])
     packages = get_roblox_packages()
     
+    # [PHASE 4] Inisialisasi Data Statistik Dashboard
+    stats = {}
     for pkg in packages:
+        stats[pkg] = {
+            'pid': '-',
+            'status': 'OFFLINE',
+            'uptime_start': 0,
+            'launch_count': 0,
+            'recovery_count': 0,
+            'crash_count': 0
+        }
+    
+    for pkg in packages:
+        stats[pkg]['status'] = 'LOADING'
+        stats[pkg]['launch_count'] += 1
+        
         launch_and_wait(pkg, intent_url, timeout_seconds)
+        
+        stats[pkg]['status'] = 'ONLINE'
+        stats[pkg]['uptime_start'] = time.time()
         time.sleep(delay_seconds)
         
-    start_monitoring(packages, intent_url, timeout_seconds)
+    # Lempar data statistik ke monitor
+    start_monitoring(packages, intent_url, timeout_seconds, stats)
 
 def show_settings():
     """Menampilkan dan mengelola Menu Settings."""
@@ -47,7 +66,6 @@ def show_settings():
         print("          MENU SETTINGS          ")
         print("=================================")
         
-        # Tampilkan link dengan rapi (potong jika terlalu panjang)
         link = config_data.get('PRIVATE_SERVER_LINK', '')
         display_link = link[:25] + "..." if len(link) > 25 else link
         
@@ -97,14 +115,11 @@ def show_main_menu():
         
         if choice == '1':
             run_auto_rejoiner()
-            
         elif choice == '2':
             show_settings()
-            
         elif choice == '3':
             print("\n[INFO] Menu Test akan diimplementasikan pada Phase 6.")
             input("Tekan Enter untuk kembali...")
-            
         elif choice == '4':
             clear_screen()
             print("=================================")
@@ -117,7 +132,6 @@ def show_main_menu():
                 print("File log belum tersedia.")
             print("=================================")
             input("Tekan Enter untuk kembali...")
-            
         elif choice == '5':
             print("\n=================================")
             print("CARRERA-HUB Auto Rejoiner")
@@ -125,9 +139,8 @@ def show_main_menu():
             print("Status: Stabil & Termux Root Ready")
             print("=================================")
             input("Tekan Enter untuk kembali...")
-            
         elif choice == '6':
             log.info("SHUTDOWN: Script dihentikan oleh user via Menu.")
             clear_screen()
             sys.exit(0)
-
+            
