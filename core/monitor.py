@@ -14,7 +14,7 @@ except ImportError:
 
 from core.logger import log
 from core.launcher import launch_and_wait
-from core.ui import console, reset_terminal, LAYOUT_WIDTH
+from core.ui import console, reset_terminal
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
@@ -35,41 +35,42 @@ def format_uptime(start_time, current_time):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def draw_dashboard(stats, current_time, pkg_count):
-    # 1. Header (Rata Kiri murni tanpa space terbuang)
+    # 1. Header (Rata Kiri murni, Font Slant)
     ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
     logo_lines = [Text.from_markup(f"[bold green]{line}[/]") for line in ascii_art.split('\n') if line.strip()]
     
-    t = time.strftime("%H:%M:%S")
-    info_text = f"Version 1.0.0   |   User root   |   Status Monitoring   |   Packages {pkg_count}   |   Time {t}"
+    # Info Bar disingkat (Tanpa Time & User)
+    info_text = f"Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}"
     info_render = Text.from_markup(f"[dim white]{info_text}[/]")
     
-    rule = Text.from_markup(f"[dim cyan]{'─' * LAYOUT_WIDTH}[/]")
+    # 2. Garis Pemisah Presisi (Dibatasi 60 karakter agar sejajar dengan Info Bar)
+    DASHBOARD_WIDTH = 60
+    rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
     
-    # 2. Summary Bar (Kepadatan Informasi)
+    # 3. Summary Bar (Loading dihapus)
     running = sum(1 for s in stats.values() if s['status'] == 'ONLINE')
     recover = sum(1 for s in stats.values() if s['status'] == 'RECOVERY')
-    loading = sum(1 for s in stats.values() if s['status'] == 'LOADING')
     offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN'])
     
-    summary_text = f"Clones {running}/{pkg_count}   |   [bold green]● Running {running}[/]   |   [bold yellow]● Recover {recover}[/]   |   [bold blue]● Loading {loading}[/]   |   [bold red]● Offline {offline}[/]"
+    summary_text = f"Clones {running}/{pkg_count}   |   [bold yellow]● Recover {recover}[/]   |   [bold red]● Offline {offline}[/]"
     summary_render = Text.from_markup(summary_text)
 
-    # 3. Tabel TUI Profesional (Tanpa kotak/border)
-    table = Table(box=None, padding=(0, 1), show_header=True, header_style="dim white", width=LAYOUT_WIDTH)
-    table.add_column("ID", style="bold cyan", width=4)
-    table.add_column("PACKAGE", style="white", width=22)
-    table.add_column("PID", style="cyan", width=6)
-    table.add_column("STATUS", width=12)
-    table.add_column("UPTIME", style="white", width=8)
-    table.add_column("L", style="dim white", width=3, justify="right")
-    table.add_column("R", style="dim white", width=3, justify="right")
-    table.add_column("C", style="dim white", width=3, justify="right")
+    # 4. Tabel TUI Profesional (Sangat Compact)
+    # Kolom diseimbangkan agar muat di layar HP dan UPTIME tidak terpotong
+    table = Table(box=None, padding=(0, 1), show_header=True, header_style="dim white", expand=False)
+    table.add_column("ID", style="bold cyan", width=3)
+    table.add_column("PACKAGE", style="white", width=16, no_wrap=True) # Diperkecil
+    table.add_column("PID", style="cyan", width=5)
+    table.add_column("STATUS", width=10)
+    table.add_column("UPTIME", style="white", width=9, no_wrap=True) # Diperlebar & Dilindungi
+    table.add_column("L", style="dim white", width=2, justify="right")
+    table.add_column("R", style="dim white", width=2, justify="right")
+    table.add_column("C", style="dim white", width=2, justify="right")
     
     for idx, (pkg, s) in enumerate(stats.items(), 1):
         uptime_str = format_uptime(s['uptime_start'], current_time) if s['status'] == 'ONLINE' else "--:--:--"
         display_pkg = pkg.replace("com.roblox.", "..") if "com.roblox." in pkg else pkg
         
-        # Indikator warna solid TUI
         if s['status'] == 'ONLINE': stat_fmt = "[bold green]● Farming[/]"
         elif s['status'] == 'LOADING': stat_fmt = "[bold blue]● Loading[/]"
         elif s['status'] == 'RECOVERY': stat_fmt = "[bold yellow]● Recover[/]"
@@ -82,38 +83,13 @@ def draw_dashboard(stats, current_time, pkg_count):
             str(s['launch_count']), str(s['recovery_count']), str(s['crash_count'])
         )
         
-    # 4. Recent Logs (Pantau log real-time di bawah tabel)
-    log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "latest.log")
-    log_lines = []
-    if os.path.exists(log_path):
-        try:
-            with open(log_path, 'r') as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
-                log_lines = lines[-6:] # Ambil 6 baris terakhir
-        except:
-            log_lines = ["Gagal membaca log."]
-    else:
-        log_lines = ["Belum ada log aktif."]
-        
-    logs_render = [Text.from_markup("[dim white]RECENT LOGS[/]")]
-    for line in log_lines:
-        if "[INFO]" in line: line = line.replace("[INFO]", "[bold green]INFO[/]")
-        elif "[WARNING]" in line: line = line.replace("[WARNING]", "[bold yellow]WARN[/]")
-        elif "[ERROR]" in line: line = line.replace("[ERROR]", "[bold red]FAIL[/]")
-        
-        # Potong string jika kepanjangan agar tidak merusak layout
-        if len(line) > LAYOUT_WIDTH:
-            line = line[:LAYOUT_WIDTH - 3] + "..."
-            
-        logs_render.append(Text.from_markup(f"[dim]{line}[/]"))
-        
-    # 5. Footer
+    # 5. Footer (Log dihapus total)
     footer_text = Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]")
     
-    # Render gabungan tanpa spasi vertikal berlebih
+    # Render gabungan
     renderables = logo_lines + [
-        Text(""), info_render, rule, summary_render, rule, table, rule
-    ] + logs_render + [rule, footer_text]
+        Text(""), info_render, rule, summary_render, rule, table, rule, footer_text
+    ]
     
     return Group(*renderables)
 
@@ -207,4 +183,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 
         except KeyboardInterrupt:
             pass
-    
+                            
