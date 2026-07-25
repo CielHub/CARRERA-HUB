@@ -1,6 +1,6 @@
 """
 Modul: config.py
-Tanggung Jawab: Membaca dan mem-parsing file config.conf.
+Tanggung Jawab: Membaca, mem-parsing, dan menyimpan file config.conf.
 """
 import os
 import sys
@@ -14,7 +14,8 @@ def load_config(config_path="config.conf"):
 
     config = {
         "PRIVATE_SERVER_LINK": "",
-        "TIMEOUT_SECONDS": 45  # Nilai default
+        "TIMEOUT_SECONDS": 45,
+        "DELAY_SECONDS": 3  # Default delay antar package
     }
 
     with open(config_path, 'r') as f:
@@ -27,7 +28,22 @@ def load_config(config_path="config.conf"):
                     config["TIMEOUT_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
                 except ValueError:
                     pass
+            elif line.startswith("DELAY_SECONDS="):
+                try:
+                    config["DELAY_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError:
+                    pass
                     
     log.info("CONFIG: Konfigurasi berhasil dimuat.")
     return config
+
+def save_config(config_data, config_path="config.conf"):
+    """Menyimpan dictionary konfigurasi kembali ke dalam config.conf."""
+    with open(config_path, 'w') as f:
+        for key, value in config_data.items():
+            if isinstance(value, str):
+                f.write(f'{key}="{value}"\n')
+            else:
+                f.write(f'{key}={value}\n')
+    log.info("CONFIG: Konfigurasi berhasil disimpan.")
     
