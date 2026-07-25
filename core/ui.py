@@ -3,6 +3,7 @@ Modul: ui.py
 Tanggung Jawab: Menyediakan komponen UI terminal, warna ANSI, dan Header statis.
 """
 import os
+import sys
 import time
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -13,8 +14,12 @@ from rich import box
 # Instance global untuk mencetak output berwarna
 console = Console()
 
-def clear_screen():
-    """Membersihkan layar terminal."""
+def reset_terminal():
+    """Membersihkan layar terminal secara total murni (termasuk scrollback buffer)."""
+    # ANSI escape sequence untuk Reset (\033c) dan Clear Scrollback (\033[3J)
+    sys.stdout.write('\033c\033[2J\033[3J\033[H')
+    sys.stdout.flush()
+    # Fallback ke clear bawaan OS
     os.system('clear' if os.name == 'posix' else 'cls')
 
 def get_header(package_count="-", status="Online"):
@@ -46,4 +51,4 @@ def get_header(package_count="-", status="Online"):
     
     # Menggunakan box.ASCII agar kompatibel sempurna dengan font Android
     return Panel(header_group, box=box.ASCII, border_style="bold green")
-  
+    
