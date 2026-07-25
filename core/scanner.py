@@ -7,15 +7,13 @@ import sys
 from core.logger import log
 
 def get_roblox_packages():
-    """Menjalankan pm list packages dan memfilter nama yang mengandung 'roblox'."""
     log.info("SCANNER: Melakukan scan package Roblox...")
     try:
-        raw_packages = subprocess.check_output(
-            "pm list packages | grep -i 'roblox' | cut -d':' -f2", 
-            shell=True, text=True
-        )
-        packages = [pkg.strip() for pkg in raw_packages.strip().split('\n') if pkg.strip()]
-    except subprocess.CalledProcessError:
+        # [PHASE 7 OPTIMIZATION]
+        # Menggunakan pure Python untuk memparsing output (Hindari pipe shell yang boros memori)
+        raw_output = subprocess.check_output(['pm', 'list', 'packages'], text=True)
+        packages = [line.split(':')[1].strip() for line in raw_output.splitlines() if 'roblox' in line.lower() and ':' in line]
+    except (subprocess.CalledProcessError, FileNotFoundError):
         packages = []
 
     if not packages:
