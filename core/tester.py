@@ -11,17 +11,17 @@ from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
 from core.monitor import get_pid
 
-# [UX UPGRADE] Gunakan reset_terminal
-from core.ui import console, reset_terminal, get_header
-from rich.panel import Panel
+from core.ui import console, reset_terminal, get_compact_header
 from rich.prompt import Prompt
+from rich.panel import Panel
+from rich.align import Align
 from rich import box
 
 def pause():
     console.input("\n[bold green]Tekan Enter untuk kembali ke Menu Test...[/]")
 
 def test_root():
-    console.print(Panel("[bold yellow]--- TEST ROOT ---[/]", box=box.ASCII))
+    console.print(Panel("[bold yellow]--- TEST ROOT ---[/]", box=box.ROUNDED, expand=False))
     try:
         uid = int(subprocess.check_output(['id', '-u']).decode('utf-8').strip())
     except Exception:
@@ -36,7 +36,7 @@ def test_root():
     pause()
 
 def test_config():
-    console.print(Panel("[bold yellow]--- TEST CONFIG ---[/]", box=box.ASCII))
+    console.print(Panel("[bold yellow]--- TEST CONFIG ---[/]", box=box.ROUNDED, expand=False))
     config_data = load_config("config.conf")
     for key, value in config_data.items():
         console.print(f"[white]{key}:[/] [cyan]{value}[/]")
@@ -44,7 +44,7 @@ def test_config():
     pause()
 
 def test_logger():
-    console.print(Panel("[bold yellow]--- TEST LOGGER ---[/]", box=box.ASCII))
+    console.print(Panel("[bold yellow]--- TEST LOGGER ---[/]", box=box.ROUNDED, expand=False))
     console.print("[white]Menulis pesan test ke dalam log...[/]")
     log.info("TESTING: Ini adalah pesan uji coba dari modul tester.py")
     log.warning("TESTING: Ini adalah pesan warning.")
@@ -53,14 +53,14 @@ def test_logger():
     pause()
 
 def test_scanner():
-    console.print(Panel("[bold yellow]--- TEST SCANNER ---[/]", box=box.ASCII))
+    console.print(Panel("[bold yellow]--- TEST SCANNER ---[/]", box=box.ROUNDED, expand=False))
     packages = get_roblox_packages()
     if packages:
         console.print("\n[bold green][OK] Scanner berfungsi dan menemukan package.[/]")
     pause()
 
 def test_deeplink():
-    console.print(Panel("[bold yellow]--- TEST DEEP LINK ---[/]", box=box.ASCII))
+    console.print(Panel("[bold yellow]--- TEST DEEP LINK ---[/]", box=box.ROUNDED, expand=False))
     config_data = load_config("config.conf")
     link = config_data.get("PRIVATE_SERVER_LINK", "")
     console.print(f"[white]Link Asli:[/] [cyan]{link}[/]")
@@ -71,7 +71,7 @@ def test_deeplink():
     pause()
 
 def test_launcher():
-    console.print(Panel("[bold yellow]--- TEST LAUNCHER ---[/]", box=box.ASCII))
+    console.print(Panel("[bold yellow]--- TEST LAUNCHER ---[/]", box=box.ROUNDED, expand=False))
     packages = get_roblox_packages()
     if not packages:
         console.print("[bold red][!] Tidak ada package untuk dites.[/]")
@@ -93,7 +93,7 @@ def test_launcher():
     pause()
 
 def test_monitor():
-    console.print(Panel("[bold yellow]--- TEST MONITORING (PID CATCHER) ---[/]", box=box.ASCII))
+    console.print(Panel("[bold yellow]--- TEST MONITORING ---[/]", box=box.ROUNDED, expand=False))
     packages = get_roblox_packages()
     if not packages:
         console.print("[bold red][!] Tidak ada package untuk dites.[/]")
@@ -110,27 +110,31 @@ def test_monitor():
     pause()
 
 def show_test_menu():
-    """Menampilkan Sub-Menu Testing."""
     while True:
         reset_terminal()
-        console.print(get_header(status="Testing"))
-        console.print("\n[bold yellow]==================== MENU TESTING ====================[/]\n", justify="center")
+        console.print(get_compact_header(status="Testing"))
         
-        console.print("[bold green][ 1 ][/] [white]Test Root Access[/]")
-        console.print("[bold green][ 2 ][/] [white]Test Config Loader[/]")
-        console.print("[bold green][ 3 ][/] [white]Test Logger System[/]")
-        console.print("[bold green][ 4 ][/] [white]Test Package Scanner[/]")
-        console.print("[bold green][ 5 ][/] [white]Test Deep Link Converter[/]")
-        console.print("[bold green][ 6 ][/] [white]Test Launcher & Smart Wait[/]")
-        console.print("[bold green][ 7 ][/] [white]Test Monitor (PID Check)[/]")
-        console.print("[bold green][ 8 ][/] [white]Kembali ke Menu Utama[/]\n")
+        menu_text = (
+            "[bold green]1.[/] Test Root Access\n"
+            "[bold green]2.[/] Test Config Loader\n"
+            "[bold green]3.[/] Test Logger System\n"
+            "[bold green]4.[/] Test Package Scanner\n"
+            "[bold green]5.[/] Test Deep Link Converter\n"
+            "[bold green]6.[/] Test Launcher & Smart Wait\n"
+            "[bold green]7.[/] Test Monitor (PID Check)\n"
+            "[bold green]8.[/] Kembali"
+        )
         
-        choice = Prompt.ask("Pilih test (1-8)", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
+        panel = Panel(menu_text, title="[bold white]TEST MENU[/]", box=box.ROUNDED, expand=False, padding=(1, 4))
+        console.print("\n")
+        console.print(Align.center(panel))
+        console.print("\n")
+        
+        choice = Prompt.ask("Pilih (1-8)", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
         
         if choice == '8': 
             break
             
-        # Bersihkan terminal sebelum merender hasil test spesifik
         reset_terminal()
         
         if choice == '1': test_root()
