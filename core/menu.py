@@ -14,11 +14,9 @@ from core.launcher import launch_and_wait
 from core.monitor import start_monitoring
 
 def clear_screen():
-    """Membersihkan layar terminal."""
     os.system('clear' if os.name == 'posix' else 'cls')
 
 def run_auto_rejoiner():
-    """Mengeksekusi logika utama Auto Rejoiner (Engine)."""
     clear_screen()
     print("=================================")
     print("    MENJALANKAN AUTO REJOINER    ")
@@ -27,37 +25,37 @@ def run_auto_rejoiner():
     config_data = load_config("config.conf")
     timeout_seconds = config_data.get("TIMEOUT_SECONDS", 45)
     delay_seconds = config_data.get("DELAY_SECONDS", 3)
+    max_retries = config_data.get("MAX_RETRIES", 3)
+    cooldown_secs = config_data.get("COOLDOWN_SECONDS", 300)
     
     intent_url = get_intent_url(config_data["PRIVATE_SERVER_LINK"])
     packages = get_roblox_packages()
     
-    # [PHASE 4] Inisialisasi Data Statistik Dashboard
+    # [PHASE 5] Penambahan kunci stats baru
     stats = {}
     for pkg in packages:
         stats[pkg] = {
-            'pid': '-',
-            'status': 'OFFLINE',
-            'uptime_start': 0,
-            'launch_count': 0,
-            'recovery_count': 0,
-            'crash_count': 0
+            'pid': '-', 'status': 'OFFLINE', 'uptime_start': 0,
+            'launch_count': 0, 'recovery_count': 0, 'crash_count': 0,
+            'consecutive_crashes': 0, 'last_recovery_time': time.time(), 'cooldown_until': 0
         }
     
     for pkg in packages:
         stats[pkg]['status'] = 'LOADING'
         stats[pkg]['launch_count'] += 1
         
-        launch_and_wait(pkg, intent_url, timeout_seconds)
-        
-        stats[pkg]['status'] = 'ONLINE'
-        stats[pkg]['uptime_start'] = time.time()
+        success = launch_and_wait(pkg, intent_url, timeout_seconds)
+        if success:
+            stats[pkg]['status'] = 'ONLINE'
+            stats[pkg]['uptime_start'] = time.time()
+        else:
+            stats[pkg]['status'] = 'FAILED'
+            
         time.sleep(delay_seconds)
         
-    # Lempar data statistik ke monitor
-    start_monitoring(packages, intent_url, timeout_seconds, stats)
+    start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats)
 
 def show_settings():
-    """Menampilkan dan mengelola Menu Settings."""
     config_data = load_config("config.conf")
     
     while True:
@@ -72,28 +70,33 @@ def show_settings():
         print(f"1. Edit Private Server Link [{display_link}]")
         print(f"2. Edit Timeout Smart Wait  [{config_data.get('TIMEOUT_SECONDS', 45)}s]")
         print(f"3. Edit Delay Antar Package [{config_data.get('DELAY_SECONDS', 3)}s]")
-        print("4. Simpan Config")
-        print("5. Kembali")
+        print(f"4. Edit Max Retries         [{config_data.get('MAX_RETRIES', 3)} kali]")
+        print(f"5. Edit Cooldown Recovery   [{config_data.get('COOLDOWN_SECONDS', 300)}s]")
+        print("6. Simpan Config")
+        print("7. Kembali")
         print("=================================")
         
-        choice = input("Pilih menu (1-5): ")
+        choice = input("Pilih menu (1-7): ")
         
         if choice == '1':
             new_link = input("Masukkan Private Server Link baru: ")
-            if new_link.strip():
-                config_data['PRIVATE_SERVER_LINK'] = new_link.strip()
+            if new_link.strip(): config_data['PRIVATE_SERVER_LINK'] = new_link.strip()
         elif choice == '2':
             new_timeout = input("Masukkan Timeout (detik): ")
-            if new_timeout.isdigit():
-                config_data['TIMEOUT_SECONDS'] = int(new_timeout)
+            if new_timeout.isdigit(): config_data['TIMEOUT_SECONDS'] = int(new_timeout)
         elif choice == '3':
             new_delay = input("Masukkan Delay (detik): ")
-            if new_delay.isdigit():
-                config_data['DELAY_SECONDS'] = int(new_delay)
+            if new_delay.isdigit(): config_data['DELAY_SECONDS'] = int(new_delay)
         elif choice == '4':
+            new_retries = input("Masukkan Max Retries: ")
+            if new_retries.isdigit(): config_data['MAX_RETRIES'] = int(new_retries)
+        elif choice == '5':
+            new_cooldown = input("Masukkan Cooldown (detik): ")
+            if new_cooldown.isdigit(): config_data['COOLDOWN_SECONDS'] = int(new_cooldown)
+        elif choice == '6':
             save_config(config_data, "config.conf")
             input("\n[+] Config berhasil disimpan! Tekan Enter untuk lanjut...")
-        elif choice == '5':
+        elif choice == '7':
             break
 
 def show_main_menu():
