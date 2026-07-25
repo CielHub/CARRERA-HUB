@@ -9,8 +9,8 @@ import sys
 from core.logger import log
 from core.launcher import launch_and_wait
 
-# [UI UPGRADE]
-from core.ui import console, get_header
+# [UX UPGRADE] Tambahkan reset_terminal dari core.ui
+from core.ui import console, get_header, reset_terminal
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
@@ -75,7 +75,14 @@ def draw_dashboard(stats, current_time, pkg_count):
     return Group(header, table, footer)
 
 def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None):
-    log.info("MONITORING: Semua package diproses. Masuk ke mode penjagaan...")
+    # 1. Cetak log transisi
+    log.info("MONITORING: Semua package selesai diproses. Memasuki mode penjagaan...")
+    
+    # 2. Beri jeda 1 detik agar log terakhir sempat terbaca oleh user
+    time.sleep(1)
+    
+    # 3. Bersihkan seluruh layar terminal sebelum Dashboard mengambil alih
+    reset_terminal()
 
     current_time = time.time()
     pkg_count = len(packages)
@@ -97,7 +104,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     last_check_time = current_time
     STABILITY_THRESHOLD = 300 
 
-    # [UI UPGRADE] Membungkus loop dengan Live renderer
+    # [UI UPGRADE] Membungkus loop dengan Live renderer (Mulai dari layar yang sudah bersih)
     with Live(draw_dashboard(stats, current_time, pkg_count), console=console, refresh_per_second=1, transient=False) as live:
         try:
             while True:
@@ -128,6 +135,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                             # Update UI sebelum memanggil fungsi blocking launch_and_wait
                             live.update(draw_dashboard(stats, current_time, pkg_count))
                             
+                            # Log error saat Live Dashboard aktif akan di-handle oleh logger agar tidak merusak layout
                             log.error(f"CRASH DETECTED: {pkg} terhenti!")
                             log.info(f"RECOVERY: Percobaan pemulihan {stats[pkg]['consecutive_crashes']}/{max_retries} untuk {pkg}...")
                             
