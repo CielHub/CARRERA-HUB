@@ -14,13 +14,13 @@ from core.launcher import launch_and_wait
 from core.monitor import start_monitoring
 from core.tester import show_test_menu
 
-# [UI UPGRADE] Import UI Engine
-from core.ui import console, clear_screen, get_header
+# Import UI Engine (gunakan reset_terminal sekarang)
+from core.ui import console, reset_terminal, get_header
 from rich.prompt import Prompt
 
 def run_auto_rejoiner():
     """Mengeksekusi logika utama Auto Rejoiner (Engine)."""
-    clear_screen()
+    reset_terminal()
     console.print(get_header(status="Initializing"))
     console.print("\n[bold yellow]==== MENJALANKAN AUTO REJOINER ====[/]\n", justify="center")
     
@@ -62,7 +62,7 @@ def show_settings():
     config_data = load_config("config.conf")
     
     while True:
-        clear_screen()
+        reset_terminal()
         console.print(get_header(status="Settings"))
         console.print("\n[bold yellow]==================== MENU SETTINGS ====================[/]\n", justify="center")
         
@@ -103,7 +103,7 @@ def show_settings():
 def show_main_menu():
     """Menampilkan Menu Utama."""
     while True:
-        clear_screen()
+        reset_terminal()
         console.print(get_header(status="Main Menu"))
         console.print("\n[bold yellow]====================== MAIN MENU ======================[/]\n", justify="center")
         
@@ -136,7 +136,7 @@ def show_main_menu():
         elif choice == '3':
             show_test_menu()
         elif choice == '4':
-            clear_screen()
+            reset_terminal()
             console.print(get_header(status="Logs Viewer"))
             console.print("\n[bold yellow]================ LOG TERAKHIR (20 Baris) ================[/]\n", justify="center")
             log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "latest.log")
@@ -147,7 +147,7 @@ def show_main_menu():
             console.print("\n[bold yellow]" + "=" * 57 + "[/]", justify="center")
             console.input("\n[bold green]Tekan Enter untuk kembali...[/]")
         elif choice == '5':
-            clear_screen()
+            reset_terminal()
             console.print(get_header(status="About"))
             console.print("\n[bold white]Versi:[/] Python Modular Edition")
             console.print("[bold white]Status:[/] Stabil & Termux Root Ready")
@@ -155,6 +155,6 @@ def show_main_menu():
             console.input("[bold green]Tekan Enter untuk kembali...[/]")
         elif choice == '6':
             log.info("SHUTDOWN: Script dihentikan oleh user via Menu.")
-            clear_screen()
+            reset_terminal()
             sys.exit(0)
             
