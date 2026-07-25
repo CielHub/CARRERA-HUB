@@ -4,11 +4,12 @@ Tanggung Jawab: Membaca dan mem-parsing file config.conf.
 """
 import os
 import sys
+from core.logger import log
 
 def load_config(config_path="config.conf"):
     """Membaca config.conf dan mengembalikan dictionary konfigurasi."""
     if not os.path.isfile(config_path):
-        print(f"[!] File {config_path} tidak ditemukan!")
+        log.error(f"CONFIG: File {config_path} tidak ditemukan!")
         sys.exit(1)
 
     config = {
@@ -27,5 +28,6 @@ def load_config(config_path="config.conf"):
                 except ValueError:
                     pass
                     
+    log.info("CONFIG: Konfigurasi berhasil dimuat.")
     return config
-  
+    
