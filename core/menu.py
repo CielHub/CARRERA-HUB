@@ -14,14 +14,12 @@ from core.launcher import launch_and_wait
 from core.monitor import start_monitoring
 from core.tester import show_test_menu
 
-# Impor Layout Engine terbaru
 from core.ui import console, reset_terminal, get_compact_header, draw_header, show_transition, draw_footer
 from rich.prompt import Prompt
 from rich.table import Table
-from rich.align import Align
+from rich.padding import Padding
 
 def run_auto_rejoiner():
-    # Tetap memanggil fungsi Dashboard, tidak ada perubahan logika
     reset_terminal()
     console.print(get_compact_header(status="Initializing"))
     console.print("\n[bold yellow]==== MENJALANKAN AUTO REJOINER ====[/]\n", justify="center")
@@ -84,7 +82,8 @@ def show_settings():
         table.add_row("[6]", "💾", "Simpan Config", ">")
         table.add_row("[7]", "↩ ", "Kembali", ">")
         
-        console.print(Align.center(table))
+        # Diubah menjadi Rata Kiri dengan padding 4 spasi
+        console.print(Padding(table, (0, 0, 0, 4)))
         draw_footer("ESC / 7  Back to Menu")
         
         choice = Prompt.ask("\n[dim]Pilih (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
@@ -128,7 +127,8 @@ def show_main_menu():
         table.add_row("[5]", "ⓘ", "About", ">")
         table.add_row("[bold red][6][/]", "[red]⏻[/]", "[red]Exit[/]", "[red]>[/]")
         
-        console.print(Align.center(table))
+        # Diubah menjadi Rata Kiri dengan padding 4 spasi
+        console.print(Padding(table, (0, 0, 0, 4)))
         draw_footer("CTRL+C  Dashboard    CTRL+Z  Exit")
         
         choice = Prompt.ask("\n[dim]Pilih menu (1-6)[/]", choices=["1", "2", "3", "4", "5", "6"])
@@ -149,11 +149,11 @@ def show_main_menu():
             
             log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "latest.log")
             if os.path.exists(log_path):
-                console.print("[dim]Menampilkan 20 baris terakhir...[/]", justify="center")
+                console.print(Padding("[dim]Menampilkan 20 baris terakhir...[/]", (0, 0, 0, 4)))
                 console.print("")
                 os.system(f"tail -n 20 {log_path}")
             else:
-                console.print("[dim]File log belum tersedia.[/]", justify="center")
+                console.print(Padding("[dim]File log belum tersedia.[/]", (0, 0, 0, 4)))
             
             draw_footer("Enter  Back to Menu")
             console.input("\n[dim]Tekan Enter...[/]")
@@ -168,7 +168,8 @@ def show_main_menu():
             table.add_row("[dim]Status[/]", "[bold green]Stabil & Termux Root Ready[/]")
             table.add_row("[dim]Developer[/]", "[bold magenta]Carrera-Hub Team[/]")
             
-            console.print(Align.center(table))
+            # Diubah menjadi Rata Kiri dengan padding 4 spasi
+            console.print(Padding(table, (0, 0, 0, 4)))
             draw_footer("Enter  Back to Menu")
             console.input("\n[dim]Tekan Enter...[/]")
         elif choice == '6':
