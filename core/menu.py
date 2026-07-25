@@ -14,14 +14,16 @@ from core.launcher import launch_and_wait
 from core.monitor import start_monitoring
 from core.tester import show_test_menu
 
-# Import UI Engine (gunakan reset_terminal sekarang)
-from core.ui import console, reset_terminal, get_header
+from core.ui import console, reset_terminal, get_compact_header
 from rich.prompt import Prompt
+from rich.panel import Panel
+from rich.text import Text
+from rich.align import Align
+from rich import box
 
 def run_auto_rejoiner():
-    """Mengeksekusi logika utama Auto Rejoiner (Engine)."""
     reset_terminal()
-    console.print(get_header(status="Initializing"))
+    console.print(get_compact_header(status="Initializing"))
     console.print("\n[bold yellow]==== MENJALANKAN AUTO REJOINER ====[/]\n", justify="center")
     
     config_data = load_config("config.conf")
@@ -58,76 +60,74 @@ def run_auto_rejoiner():
     start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats)
 
 def show_settings():
-    """Menampilkan dan mengelola Menu Settings."""
     config_data = load_config("config.conf")
-    
     while True:
         reset_terminal()
-        console.print(get_header(status="Settings"))
-        console.print("\n[bold yellow]==================== MENU SETTINGS ====================[/]\n", justify="center")
+        console.print(get_compact_header(status="Settings"))
         
         link = config_data.get('PRIVATE_SERVER_LINK', '')
-        display_link = link[:25] + "..." if len(link) > 25 else link
+        display_link = link[:20] + "..." if len(link) > 20 else link
         
-        console.print(f"[bold green][ 1 ][/] Edit Private Server Link [bold cyan][{display_link}][/]")
-        console.print(f"[bold green][ 2 ][/] Edit Timeout Smart Wait  [bold cyan][{config_data.get('TIMEOUT_SECONDS', 45)}s][/]")
-        console.print(f"[bold green][ 3 ][/] Edit Delay Antar Package [bold cyan][{config_data.get('DELAY_SECONDS', 3)}s][/]")
-        console.print(f"[bold green][ 4 ][/] Edit Max Retries         [bold cyan][{config_data.get('MAX_RETRIES', 3)} kali][/]")
-        console.print(f"[bold green][ 5 ][/] Edit Cooldown Recovery   [bold cyan][{config_data.get('COOLDOWN_SECONDS', 300)}s][/]")
-        console.print(f"[bold green][ 6 ][/] Simpan Config")
-        console.print(f"[bold green][ 7 ][/] Kembali\n")
+        menu_text = (
+            f"[bold green]1.[/] Edit Server Link     [bold cyan][{display_link}][/]\n"
+            f"[bold green]2.[/] Edit Timeout         [bold cyan][{config_data.get('TIMEOUT_SECONDS', 45)}s][/]\n"
+            f"[bold green]3.[/] Edit Delay Package   [bold cyan][{config_data.get('DELAY_SECONDS', 3)}s][/]\n"
+            f"[bold green]4.[/] Edit Max Retries     [bold cyan][{config_data.get('MAX_RETRIES', 3)}x][/]\n"
+            f"[bold green]5.[/] Edit Cooldown        [bold cyan][{config_data.get('COOLDOWN_SECONDS', 300)}s][/]\n"
+            f"[bold green]6.[/] Simpan Config\n"
+            f"[bold green]7.[/] Kembali"
+        )
         
-        choice = Prompt.ask("Pilih menu (1-7)", choices=["1", "2", "3", "4", "5", "6", "7"])
+        panel = Panel(menu_text, title="[bold white]SETTINGS[/]", box=box.ROUNDED, expand=False, padding=(1, 4))
+        console.print("\n")
+        console.print(Align.center(panel))
+        console.print("\n")
+        
+        choice = Prompt.ask("Pilih (1-7)", choices=["1", "2", "3", "4", "5", "6", "7"])
         
         if choice == '1':
-            new_link = console.input("[bold white]Masukkan Private Server Link baru:[/] ")
+            new_link = console.input("\n[bold white]Masukkan Private Server Link baru:[/] ")
             if new_link.strip(): config_data['PRIVATE_SERVER_LINK'] = new_link.strip()
         elif choice == '2':
-            new_timeout = console.input("[bold white]Masukkan Timeout (detik):[/] ")
+            new_timeout = console.input("\n[bold white]Masukkan Timeout (detik):[/] ")
             if new_timeout.isdigit(): config_data['TIMEOUT_SECONDS'] = int(new_timeout)
         elif choice == '3':
-            new_delay = console.input("[bold white]Masukkan Delay (detik):[/] ")
+            new_delay = console.input("\n[bold white]Masukkan Delay (detik):[/] ")
             if new_delay.isdigit(): config_data['DELAY_SECONDS'] = int(new_delay)
         elif choice == '4':
-            new_retries = console.input("[bold white]Masukkan Max Retries:[/] ")
+            new_retries = console.input("\n[bold white]Masukkan Max Retries:[/] ")
             if new_retries.isdigit(): config_data['MAX_RETRIES'] = int(new_retries)
         elif choice == '5':
-            new_cooldown = console.input("[bold white]Masukkan Cooldown (detik):[/] ")
+            new_cooldown = console.input("\n[bold white]Masukkan Cooldown (detik):[/] ")
             if new_cooldown.isdigit(): config_data['COOLDOWN_SECONDS'] = int(new_cooldown)
         elif choice == '6':
             save_config(config_data, "config.conf")
-            console.input("\n[bold green][+][/] Config berhasil disimpan! Tekan Enter untuk lanjut...")
+            console.input("\n[bold green][+][/] Config disimpan! Enter untuk lanjut...")
         elif choice == '7':
             break
 
 def show_main_menu():
-    """Menampilkan Menu Utama."""
     while True:
         reset_terminal()
-        console.print(get_header(status="Main Menu"))
-        console.print("\n[bold yellow]====================== MAIN MENU ======================[/]\n", justify="center")
+        console.print(get_compact_header(status="Main Menu"))
         
-        console.print("[bold green][ 1 ][/] [bold white]Jalankan Auto Rejoiner[/]")
-        console.print("      [dim]Mulai menjalankan semua package dan monitoring.[/]\n")
+        menu_text = (
+            "[bold green]1.[/] [bold white]Auto Rejoiner[/]\n"
+            "[bold green]2.[/] [white]Settings[/]\n"
+            "[bold green]3.[/] [white]Test[/]\n"
+            "[bold green]4.[/] [white]Logs[/]\n"
+            "[bold green]5.[/] [white]About[/]\n"
+            "[bold green]6.[/] [white]Exit[/]"
+        )
         
-        console.print("[bold green][ 2 ][/] [bold white]Settings[/]")
-        console.print("      [dim]Ubah konfigurasi link, timeout, delay, retries, dll.[/]\n")
+        # expand=False membuat menu terpusat dan berukuran pas kontennya
+        panel = Panel(menu_text, title="[bold green]MAIN MENU[/]", box=box.ROUNDED, expand=False, padding=(1, 10))
         
-        console.print("[bold green][ 3 ][/] [bold white]Test[/]")
-        console.print("      [dim]Jalankan unit test untuk semua modul sistem.[/]\n")
+        console.print("\n")
+        console.print(Align.center(panel))
+        console.print("\n")
         
-        console.print("[bold green][ 4 ][/] [bold white]Logs[/]")
-        console.print("      [dim]Lihat log terbaru dan riwayat aktivitas.[/]\n")
-        
-        console.print("[bold green][ 5 ][/] [bold white]About[/]")
-        console.print("      [dim]Informasi tentang CARRERA-HUB Auto Rejoiner.[/]\n")
-        
-        console.print("[bold green][ 6 ][/] [bold white]Exit[/]")
-        console.print("      [dim]Keluar dari program.[/]\n")
-        
-        console.print("[bold yellow]" + "=" * 55 + "[/]\n", justify="center")
-        
-        choice = Prompt.ask("Pilih menu (1-6)", choices=["1", "2", "3", "4", "5", "6"])
+        choice = Prompt.ask("Pilih (1-6)", choices=["1", "2", "3", "4", "5", "6"])
         
         if choice == '1':
             run_auto_rejoiner()
@@ -137,22 +137,25 @@ def show_main_menu():
             show_test_menu()
         elif choice == '4':
             reset_terminal()
-            console.print(get_header(status="Logs Viewer"))
-            console.print("\n[bold yellow]================ LOG TERAKHIR (20 Baris) ================[/]\n", justify="center")
+            console.print(get_compact_header(status="Logs"))
+            console.print("\n[bold yellow]=========== LOG TERAKHIR (20 Baris) ===========[/]\n", justify="center")
             log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "latest.log")
             if os.path.exists(log_path):
                 os.system(f"tail -n 20 {log_path}")
             else:
-                console.print("[dim]File log belum tersedia.[/]")
-            console.print("\n[bold yellow]" + "=" * 57 + "[/]", justify="center")
+                console.print("[dim]File log belum tersedia.[/]", justify="center")
+            console.print("\n[bold yellow]===============================================[/]", justify="center")
             console.input("\n[bold green]Tekan Enter untuk kembali...[/]")
         elif choice == '5':
             reset_terminal()
-            console.print(get_header(status="About"))
-            console.print("\n[bold white]Versi:[/] Python Modular Edition")
-            console.print("[bold white]Status:[/] Stabil & Termux Root Ready")
-            console.print("[bold white]Developer:[/] Carrera-Hub Team\n")
-            console.input("[bold green]Tekan Enter untuk kembali...[/]")
+            about_text = (
+                "[bold white]Versi:[/] Python Modular Edition\n"
+                "[bold white]Status:[/] Stabil & Termux Root Ready\n"
+                "[bold white]Developer:[/] Carrera-Hub Team"
+            )
+            console.print("\n")
+            console.print(Align.center(Panel(about_text, title="[bold green]ABOUT[/]", box=box.ROUNDED)))
+            console.input("\n[bold green]Tekan Enter untuk kembali...[/]")
         elif choice == '6':
             log.info("SHUTDOWN: Script dihentikan oleh user via Menu.")
             reset_terminal()
