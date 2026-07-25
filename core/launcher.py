@@ -7,17 +7,21 @@ import time
 from core.logger import log
 
 def get_pid_quick(pkg_name):
-    """Fungsi helper internal untuk mengecek PID secara instan."""
-    result = subprocess.run(f"pidof '{pkg_name}'", shell=True, capture_output=True, text=True)
-    return result.stdout.strip()
+    # [PHASE 7 OPTIMIZATION]
+    # Menghilangkan shell=True, langsung eksekusi binary 'pidof'
+    try:
+        result = subprocess.run(['pidof', pkg_name], capture_output=True, text=True)
+        return result.stdout.strip()
+    except FileNotFoundError:
+        return ""
 
 def launch_and_wait(pkg_name, intent_url, timeout_seconds):
-    """Mengeksekusi intent, menunggu log koneksi, dan mereturn True/False berdasarkan keberhasilan."""
     log.info(f"LAUNCH: Membuka {pkg_name}...")
     
-    subprocess.run("logcat -c", shell=True)
-    am_cmd = f"am start -p '{pkg_name}' -a android.intent.action.VIEW -d '{intent_url}'"
-    subprocess.run(am_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # [PHASE 7 OPTIMIZATION]
+    # Hindari overhead shell bash, eksekusi langsung ke sistem operasi Android
+    subprocess.run(['logcat', '-c'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(['am', 'start', '-p', pkg_name, '-a', 'android.intent.action.VIEW', '-d', intent_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     log.info(f"Smart Wait: Menunggu {pkg_name} terhubung ({timeout_seconds} detik)...")
     
@@ -33,7 +37,6 @@ def launch_and_wait(pkg_name, intent_url, timeout_seconds):
         time.sleep(1)
         elapsed += 1
         
-    # [PHASE 5] Deteksi Recovery Gagal
     final_pid = get_pid_quick(pkg_name)
     if not final_pid:
         log.error(f"LAUNCH FAILED: {pkg_name} gagal diluncurkan (Proses mati secara prematur).")
