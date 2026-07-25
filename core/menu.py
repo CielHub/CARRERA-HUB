@@ -14,14 +14,14 @@ from core.launcher import launch_and_wait
 from core.monitor import start_monitoring
 from core.tester import show_test_menu
 
-from core.ui import console, reset_terminal, get_compact_header
+# Impor Layout Engine terbaru
+from core.ui import console, reset_terminal, get_compact_header, draw_header, show_transition, draw_footer
 from rich.prompt import Prompt
-from rich.panel import Panel
-from rich.text import Text
+from rich.table import Table
 from rich.align import Align
-from rich import box
 
 def run_auto_rejoiner():
+    # Tetap memanggil fungsi Dashboard, tidak ada perubahan logika
     reset_terminal()
     console.print(get_compact_header(status="Initializing"))
     console.print("\n[bold yellow]==== MENJALANKAN AUTO REJOINER ====[/]\n", justify="center")
@@ -60,103 +60,119 @@ def run_auto_rejoiner():
     start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats)
 
 def show_settings():
+    show_transition("Opening Settings...")
     config_data = load_config("config.conf")
+    
     while True:
         reset_terminal()
-        console.print(get_compact_header(status="Settings"))
+        draw_header("SETTINGS")
         
         link = config_data.get('PRIVATE_SERVER_LINK', '')
         display_link = link[:20] + "..." if len(link) > 20 else link
         
-        menu_text = (
-            f"[bold green]1.[/] Edit Server Link     [bold cyan][{display_link}][/]\n"
-            f"[bold green]2.[/] Edit Timeout         [bold cyan][{config_data.get('TIMEOUT_SECONDS', 45)}s][/]\n"
-            f"[bold green]3.[/] Edit Delay Package   [bold cyan][{config_data.get('DELAY_SECONDS', 3)}s][/]\n"
-            f"[bold green]4.[/] Edit Max Retries     [bold cyan][{config_data.get('MAX_RETRIES', 3)}x][/]\n"
-            f"[bold green]5.[/] Edit Cooldown        [bold cyan][{config_data.get('COOLDOWN_SECONDS', 300)}s][/]\n"
-            f"[bold green]6.[/] Simpan Config\n"
-            f"[bold green]7.[/] Kembali"
-        )
+        table = Table(box=None, padding=(0, 2), show_header=False, expand=False)
+        table.add_column("No", style="bold cyan", justify="right")
+        table.add_column("Icon", style="white", justify="center")
+        table.add_column("Config", style="white", justify="left")
+        table.add_column("Value", style="dim white", justify="right")
         
-        panel = Panel(menu_text, title="[bold white]SETTINGS[/]", box=box.ROUNDED, expand=False, padding=(1, 4))
-        console.print("\n")
-        console.print(Align.center(panel))
-        console.print("\n")
+        table.add_row("[1]", "🔗", "Server Link", f"[cyan]{display_link}[/]")
+        table.add_row("[2]", "⏱ ", "Timeout Wait", f"[cyan]{config_data.get('TIMEOUT_SECONDS', 45)}s[/]")
+        table.add_row("[3]", "⏳", "Delay Package", f"[cyan]{config_data.get('DELAY_SECONDS', 3)}s[/]")
+        table.add_row("[4]", "🔄", "Max Retries", f"[cyan]{config_data.get('MAX_RETRIES', 3)}x[/]")
+        table.add_row("[5]", "❄ ", "Cooldown", f"[cyan]{config_data.get('COOLDOWN_SECONDS', 300)}s[/]")
+        table.add_row("[6]", "💾", "Simpan Config", ">")
+        table.add_row("[7]", "↩ ", "Kembali", ">")
         
-        choice = Prompt.ask("Pilih (1-7)", choices=["1", "2", "3", "4", "5", "6", "7"])
+        console.print(Align.center(table))
+        draw_footer("ESC / 7  Back to Menu")
+        
+        choice = Prompt.ask("\n[dim]Pilih (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
         
         if choice == '1':
-            new_link = console.input("\n[bold white]Masukkan Private Server Link baru:[/] ")
+            new_link = console.input("\n[dim]Masukkan Server Link baru:[/] ")
             if new_link.strip(): config_data['PRIVATE_SERVER_LINK'] = new_link.strip()
         elif choice == '2':
-            new_timeout = console.input("\n[bold white]Masukkan Timeout (detik):[/] ")
+            new_timeout = console.input("\n[dim]Masukkan Timeout (detik):[/] ")
             if new_timeout.isdigit(): config_data['TIMEOUT_SECONDS'] = int(new_timeout)
         elif choice == '3':
-            new_delay = console.input("\n[bold white]Masukkan Delay (detik):[/] ")
+            new_delay = console.input("\n[dim]Masukkan Delay (detik):[/] ")
             if new_delay.isdigit(): config_data['DELAY_SECONDS'] = int(new_delay)
         elif choice == '4':
-            new_retries = console.input("\n[bold white]Masukkan Max Retries:[/] ")
+            new_retries = console.input("\n[dim]Masukkan Max Retries:[/] ")
             if new_retries.isdigit(): config_data['MAX_RETRIES'] = int(new_retries)
         elif choice == '5':
-            new_cooldown = console.input("\n[bold white]Masukkan Cooldown (detik):[/] ")
+            new_cooldown = console.input("\n[dim]Masukkan Cooldown (detik):[/] ")
             if new_cooldown.isdigit(): config_data['COOLDOWN_SECONDS'] = int(new_cooldown)
         elif choice == '6':
+            show_transition("Menyimpan Config...")
             save_config(config_data, "config.conf")
-            console.input("\n[bold green][+][/] Config disimpan! Enter untuk lanjut...")
         elif choice == '7':
             break
 
 def show_main_menu():
     while True:
         reset_terminal()
-        console.print(get_compact_header(status="Main Menu"))
+        draw_header("MENU UTAMA")
         
-        menu_text = (
-            "[bold green]1.[/] [bold white]Auto Rejoiner[/]\n"
-            "[bold green]2.[/] [white]Settings[/]\n"
-            "[bold green]3.[/] [white]Test[/]\n"
-            "[bold green]4.[/] [white]Logs[/]\n"
-            "[bold green]5.[/] [white]About[/]\n"
-            "[bold green]6.[/] [white]Exit[/]"
-        )
+        table = Table(box=None, padding=(0, 2), show_header=False, expand=False)
+        table.add_column("No", style="bold cyan", justify="right")
+        table.add_column("Icon", style="white", justify="center")
+        table.add_column("Menu", style="white", justify="left")
+        table.add_column("Chevron", style="dim white", justify="right")
         
-        # expand=False membuat menu terpusat dan berukuran pas kontennya
-        panel = Panel(menu_text, title="[bold green]MAIN MENU[/]", box=box.ROUNDED, expand=False, padding=(1, 10))
+        table.add_row("[1]", "▶", "Auto Rejoiner", ">")
+        table.add_row("[2]", "⚙", "Settings", ">")
+        table.add_row("[3]", "🧪", "Test (Unit Testing)", ">")
+        table.add_row("[4]", "📝", "Logs (Lihat Log)", ">")
+        table.add_row("[5]", "ⓘ", "About", ">")
+        table.add_row("[bold red][6][/]", "[red]⏻[/]", "[red]Exit[/]", "[red]>[/]")
         
-        console.print("\n")
-        console.print(Align.center(panel))
-        console.print("\n")
+        console.print(Align.center(table))
+        draw_footer("CTRL+C  Dashboard    CTRL+Z  Exit")
         
-        choice = Prompt.ask("Pilih (1-6)", choices=["1", "2", "3", "4", "5", "6"])
+        choice = Prompt.ask("\n[dim]Pilih menu (1-6)[/]", choices=["1", "2", "3", "4", "5", "6"])
         
         if choice == '1':
+            show_transition("Starting Engine...")
             run_auto_rejoiner()
         elif choice == '2':
             show_settings()
+            show_transition("Loading Menu...")
         elif choice == '3':
             show_test_menu()
+            show_transition("Loading Menu...")
         elif choice == '4':
+            show_transition("Fetching Logs...")
             reset_terminal()
-            console.print(get_compact_header(status="Logs"))
-            console.print("\n[bold yellow]=========== LOG TERAKHIR (20 Baris) ===========[/]\n", justify="center")
+            draw_header("LOGS VIEWER")
+            
             log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "latest.log")
             if os.path.exists(log_path):
+                console.print("[dim]Menampilkan 20 baris terakhir...[/]", justify="center")
+                console.print("")
                 os.system(f"tail -n 20 {log_path}")
             else:
                 console.print("[dim]File log belum tersedia.[/]", justify="center")
-            console.print("\n[bold yellow]===============================================[/]", justify="center")
-            console.input("\n[bold green]Tekan Enter untuk kembali...[/]")
+            
+            draw_footer("Enter  Back to Menu")
+            console.input("\n[dim]Tekan Enter...[/]")
         elif choice == '5':
+            show_transition("Opening About...")
             reset_terminal()
-            about_text = (
-                "[bold white]Versi:[/] Python Modular Edition\n"
-                "[bold white]Status:[/] Stabil & Termux Root Ready\n"
-                "[bold white]Developer:[/] Carrera-Hub Team"
-            )
-            console.print("\n")
-            console.print(Align.center(Panel(about_text, title="[bold green]ABOUT[/]", box=box.ROUNDED)))
-            console.input("\n[bold green]Tekan Enter untuk kembali...[/]")
+            draw_header("ABOUT")
+            
+            table = Table(box=None, padding=(0, 3), show_header=False, expand=False)
+            table.add_row("[dim]Aplikasi[/]", "[bold white]CARRERA-HUB Auto Rejoiner[/]")
+            table.add_row("[dim]Versi[/]", "[bold cyan]Python Modular Edition[/]")
+            table.add_row("[dim]Status[/]", "[bold green]Stabil & Termux Root Ready[/]")
+            table.add_row("[dim]Developer[/]", "[bold magenta]Carrera-Hub Team[/]")
+            
+            console.print(Align.center(table))
+            draw_footer("Enter  Back to Menu")
+            console.input("\n[dim]Tekan Enter...[/]")
         elif choice == '6':
+            show_transition("Shutting Down...")
             log.info("SHUTDOWN: Script dihentikan oleh user via Menu.")
             reset_terminal()
             sys.exit(0)
