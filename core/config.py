@@ -7,7 +7,6 @@ import sys
 from core.logger import log
 
 def load_config(config_path="config.conf"):
-    """Membaca config.conf dan mengembalikan dictionary konfigurasi."""
     if not os.path.isfile(config_path):
         log.error(f"CONFIG: File {config_path} tidak ditemukan!")
         sys.exit(1)
@@ -15,7 +14,9 @@ def load_config(config_path="config.conf"):
     config = {
         "PRIVATE_SERVER_LINK": "",
         "TIMEOUT_SECONDS": 45,
-        "DELAY_SECONDS": 3  # Default delay antar package
+        "DELAY_SECONDS": 3,
+        "MAX_RETRIES": 3,           # [PHASE 5] Batas recovery berturut-turut
+        "COOLDOWN_SECONDS": 300     # [PHASE 5] Waktu tunggu jika melebihi batas (5 menit)
     }
 
     with open(config_path, 'r') as f:
@@ -24,21 +25,22 @@ def load_config(config_path="config.conf"):
             if line.startswith("PRIVATE_SERVER_LINK="):
                 config["PRIVATE_SERVER_LINK"] = line.split("=", 1)[1].strip('"\'')
             elif line.startswith("TIMEOUT_SECONDS="):
-                try:
-                    config["TIMEOUT_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError:
-                    pass
+                try: config["TIMEOUT_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
             elif line.startswith("DELAY_SECONDS="):
-                try:
-                    config["DELAY_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError:
-                    pass
+                try: config["DELAY_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("MAX_RETRIES="):
+                try: config["MAX_RETRIES"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("COOLDOWN_SECONDS="):
+                try: config["COOLDOWN_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
                     
     log.info("CONFIG: Konfigurasi berhasil dimuat.")
     return config
 
 def save_config(config_data, config_path="config.conf"):
-    """Menyimpan dictionary konfigurasi kembali ke dalam config.conf."""
     with open(config_path, 'w') as f:
         for key, value in config_data.items():
             if isinstance(value, str):
