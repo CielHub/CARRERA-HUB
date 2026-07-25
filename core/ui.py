@@ -14,11 +14,9 @@ except ImportError:
 
 from rich.console import Console
 from rich.text import Text
-from rich.rule import Rule
-from rich.align import Align
 
-# Instance global
 console = Console()
+LAYOUT_WIDTH = 60
 
 def reset_terminal():
     """Membersihkan layar terminal secara total murni."""
@@ -40,38 +38,33 @@ def get_compact_header(title="CARRERA-HUB v1.0", user="root", pkg_count="-", sta
     return header_text
 
 def draw_header(subtitle="MENU"):
-    """Membangun Header Utama dengan identitas visual yang konsisten."""
-    # 1. Logo Pyfiglet (Font: Slant agar terlihat modern/tech)
+    """Membangun Header Rata Kiri dengan Lebar Tetap (60 Karakter)."""
+    # 1. Logo Pyfiglet (Rata Kiri)
     ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
-    # Hapus spasi kosong berlebihan dari output pyfiglet
-    ascii_lines = [line for line in ascii_art.split('\n') if line.strip()]
-    console.print(Align.center(f"[bold green]{chr(10).join(ascii_lines)}[/]"))
+    for line in ascii_art.split('\n'):
+        if line.strip():
+            console.print(f"[bold green]{line}[/]")
     
     # 2. Subtitle Halaman
-    console.print(Align.center(f"[bold cyan]{subtitle}[/]"))
-    console.print("") # Whitespace
+    console.print(f"[bold cyan]{subtitle}[/]")
+    console.print("")
     
-    # 3. Info Bar
-    info_text = Text.from_markup(
-        "[dim white]Version[/] [bold white]1.0.0[/]  [dim]|[/]  "
-        "[dim white]User[/] [bold white]root[/]  [dim]|[/]  "
-        "[dim white]Status[/] [bold white]Ready[/]",
-        justify="center"
-    )
-    console.print(info_text)
+    # 3. Info Bar (Teks diatur agar persis berjumlah 60 karakter, berhenti di 'y')
+    info_text = "Version 1.0.0      |      User root      |      Status Ready"
+    console.print(f"[dim white]{info_text}[/]")
     
-    # 4. Garis Pemisah Tipis
-    console.print(Rule(style="dim cyan"))
-    console.print("") # Whitespace
+    # 4. Garis Pemisah Tipis (Hanya sepanjang 60 karakter)
+    console.print("[dim cyan]" + "─" * LAYOUT_WIDTH + "[/]")
+    console.print("")
 
 def show_transition(message="Loading..."):
     """Menampilkan transisi spinner modern sebelum berpindah halaman."""
     with console.status(f"[dim cyan]{message}[/]", spinner="dots"):
-        time.sleep(0.4) # Jeda natural
+        time.sleep(0.4) 
     reset_terminal()
 
 def draw_footer(text="CTRL+C  Dashboard    CTRL+Z  Exit"):
-    """Mencetak Footer minimalis di bagian bawah."""
-    console.print("") # Whitespace
-    console.print(Text(text, style="dim white", justify="center"))
+    """Mencetak Footer minimalis di bagian bawah (Rata Kiri)."""
+    console.print("") 
+    console.print(f"[dim white]{text}[/]")
     
