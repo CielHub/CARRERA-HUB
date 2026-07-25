@@ -11,8 +11,8 @@ from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
 from core.monitor import get_pid
 
-# [UI UPGRADE]
-from core.ui import console, clear_screen, get_header
+# [UX UPGRADE] Gunakan reset_terminal
+from core.ui import console, reset_terminal, get_header
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich import box
@@ -112,7 +112,7 @@ def test_monitor():
 def show_test_menu():
     """Menampilkan Sub-Menu Testing."""
     while True:
-        clear_screen()
+        reset_terminal()
         console.print(get_header(status="Testing"))
         console.print("\n[bold yellow]==================== MENU TESTING ====================[/]\n", justify="center")
         
@@ -127,7 +127,12 @@ def show_test_menu():
         
         choice = Prompt.ask("Pilih test (1-8)", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
         
-        clear_screen()
+        if choice == '8': 
+            break
+            
+        # Bersihkan terminal sebelum merender hasil test spesifik
+        reset_terminal()
+        
         if choice == '1': test_root()
         elif choice == '2': test_config()
         elif choice == '3': test_logger()
@@ -135,5 +140,4 @@ def show_test_menu():
         elif choice == '5': test_deeplink()
         elif choice == '6': test_launcher()
         elif choice == '7': test_monitor()
-        elif choice == '8': break
             
