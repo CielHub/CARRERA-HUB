@@ -15,8 +15,8 @@ def load_config(config_path="config.conf"):
         "PRIVATE_SERVER_LINK": "",
         "TIMEOUT_SECONDS": 45,
         "DELAY_SECONDS": 3,
-        "MAX_RETRIES": 3,           # [PHASE 5] Batas recovery berturut-turut
-        "COOLDOWN_SECONDS": 300     # [PHASE 5] Waktu tunggu jika melebihi batas (5 menit)
+        "MAX_RETRIES": 3,
+        "COOLDOWN_SECONDS": 300
     }
 
     with open(config_path, 'r') as f:
@@ -35,6 +35,12 @@ def load_config(config_path="config.conf"):
                 except ValueError: pass
             elif line.startswith("COOLDOWN_SECONDS="):
                 try: config["COOLDOWN_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            # --- PENAMBAHAN FITUR: Dynamic Package Link Parser ---
+            elif line.startswith("PKG_"):
+                try:
+                    key, val = line.split("=", 1)
+                    config[key] = val.strip('"\'')
                 except ValueError: pass
                     
     log.info("CONFIG: Konfigurasi berhasil dimuat.")
