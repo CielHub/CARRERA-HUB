@@ -47,13 +47,12 @@ def show_link_manager(config_data):
             table.add_row(f"[{idx}]", pkg, display_link)
             
         console.print(table)
-        draw_footer("[1,2,3..] Pilih ID untuk edit   |   [0] Simpan & Kembali")
+        # UI FIX: Menghapus label 'Simpan &' karena sudah Auto Save
+        draw_footer("[1,2,3..] Pilih ID untuk edit   |   [0] Kembali")
         
         choice = console.input("\n[dim]Pilih ID (0 untuk keluar):[/] ").strip()
         
         if choice == '0':
-            show_transition("Menyimpan Pilihan...")
-            save_config(config_data, "config.conf")
             break
         elif choice.isdigit():
             idx = int(choice)
@@ -68,6 +67,9 @@ def show_link_manager(config_data):
                 else:
                     if pkg_key in config_data:
                         del config_data[pkg_key]
+                        
+                # AUTO SAVE: Langsung simpan setelah modifikasi Link Package
+                save_config(config_data, "config.conf")
             else:
                 console.print("[bold red][!] ID tidak valid.[/]")
                 time.sleep(1)
@@ -146,12 +148,10 @@ def run_auto_rejoiner():
             'consecutive_crashes': 0, 'last_recovery_time': current_time, 'cooldown_until': 0
         }
     
-    # UI FIX: Mematikan cetakan log ke terminal agar tidak merusak TUI (tetap tersimpan di latest.log)
     for handler in log.handlers[:]:
         if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
             log.removeHandler(handler)
             
-    # UI FIX: Mulai rendering Dashboard secara langsung saat Launch pertama
     reset_terminal()
     draw_static_header(len(packages))
     
@@ -179,7 +179,6 @@ def run_auto_rejoiner():
     start_monitoring(packages, intent_dict, timeout_seconds, max_retries, cooldown_secs, stats)
 
 def show_settings():
-    show_transition("Opening Settings...")
     config_data = load_config("config.conf")
     
     while True:
@@ -195,41 +194,49 @@ def show_settings():
         table.add_column("Config", style="white", width=25, no_wrap=True)
         table.add_column("Value", style="dim white", justify="right", width=23, no_wrap=True)
         
+        # UI FIX: Menghapus opsi [7] Simpan Config dan menyesuaikan urutan
         table.add_row("[1]", "🔗", "Global Server Link", f"[cyan]{display_link}[/]")
         table.add_row("[2]", "⏱", "Timeout Wait", f"[cyan]{config_data.get('TIMEOUT_SECONDS', 45)}s[/]")
         table.add_row("[3]", "⏳", "Delay Package", f"[cyan]{config_data.get('DELAY_SECONDS', 3)}s[/]")
         table.add_row("[4]", "🔄", "Max Retries", f"[cyan]{config_data.get('MAX_RETRIES', 3)}x[/]")
         table.add_row("[5]", "❄", "Cooldown", f"[cyan]{config_data.get('COOLDOWN_SECONDS', 300)}s[/]")
         table.add_row("[6]", "📦", "Atur Link per Package", ">")
-        table.add_row("[7]", "💾", "Simpan Config", ">")
-        table.add_row("[8]", "↩", "Kembali", ">")
+        table.add_row("[7]", "↩", "Kembali", ">")
         
         console.print(table)
-        draw_footer("ESC / 8  Back to Menu")
+        draw_footer("ESC / 7  Back to Menu")
         
-        choice = Prompt.ask("\n[dim]Pilih (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
+        choice = Prompt.ask("\n[dim]Pilih (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
         
+        # AUTO SAVE: Memanggil save_config setelah setiap perubahan value yang valid
         if choice == '1':
             new_link = console.input("\n[dim]Masukkan Server Link baru:[/] ")
-            if new_link.strip(): config_data['PRIVATE_SERVER_LINK'] = new_link.strip()
+            if new_link.strip(): 
+                config_data['PRIVATE_SERVER_LINK'] = new_link.strip()
+                save_config(config_data, "config.conf")
         elif choice == '2':
             new_timeout = console.input("\n[dim]Masukkan Timeout (detik):[/] ")
-            if new_timeout.isdigit(): config_data['TIMEOUT_SECONDS'] = int(new_timeout)
+            if new_timeout.isdigit(): 
+                config_data['TIMEOUT_SECONDS'] = int(new_timeout)
+                save_config(config_data, "config.conf")
         elif choice == '3':
             new_delay = console.input("\n[dim]Masukkan Delay (detik):[/] ")
-            if new_delay.isdigit(): config_data['DELAY_SECONDS'] = int(new_delay)
+            if new_delay.isdigit(): 
+                config_data['DELAY_SECONDS'] = int(new_delay)
+                save_config(config_data, "config.conf")
         elif choice == '4':
             new_retries = console.input("\n[dim]Masukkan Max Retries:[/] ")
-            if new_retries.isdigit(): config_data['MAX_RETRIES'] = int(new_retries)
+            if new_retries.isdigit(): 
+                config_data['MAX_RETRIES'] = int(new_retries)
+                save_config(config_data, "config.conf")
         elif choice == '5':
             new_cooldown = console.input("\n[dim]Masukkan Cooldown (detik):[/] ")
-            if new_cooldown.isdigit(): config_data['COOLDOWN_SECONDS'] = int(new_cooldown)
+            if new_cooldown.isdigit(): 
+                config_data['COOLDOWN_SECONDS'] = int(new_cooldown)
+                save_config(config_data, "config.conf")
         elif choice == '6':
             show_link_manager(config_data)
         elif choice == '7':
-            show_transition("Menyimpan Config...")
-            save_config(config_data, "config.conf")
-        elif choice == '8':
             break
 
 def show_main_menu():
@@ -259,8 +266,8 @@ def show_main_menu():
             show_transition("Starting Engine...")
             run_auto_rejoiner()
         elif choice == '2':
-            show_settings()
             show_transition("Loading Menu...")
+            show_settings()
         elif choice == '3':
             show_test_menu()
             show_transition("Loading Menu...")
@@ -298,11 +305,10 @@ def show_main_menu():
             console.input("\n[dim]Tekan Enter...[/]")
         elif choice == '6':
             show_transition("Shutting Down...")
-            # Restore logger if needed or just exit
             try:
                 sniper_agent.stop()
             except Exception:
                 pass
             reset_terminal()
             sys.exit(0)
-    
+                    
