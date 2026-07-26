@@ -34,13 +34,20 @@ def format_uptime(start_time, current_time):
     m, s = divmod(rem, 60)
     return f"{h:02d}:{m:02d}:{s:02d}"
 
-def draw_dashboard(stats, current_time, pkg_count):
+# --- UI FIX: Fungsi render Header Statis agar logo tidak bertumpuk ---
+def draw_static_header(pkg_count):
     ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
-    logo_lines = [Text.from_markup(f"[bold green]{line}[/]") for line in ascii_art.split('\n') if line.strip()]
+    for line in ascii_art.split('\n'):
+        if line.strip():
+            console.print(f"[bold green]{line}[/]")
     
     info_text = f"Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}"
-    info_render = Text.from_markup(f"[dim white]{info_text}[/]")
+    console.print(f"[dim white]{info_text}[/]")
     
+    DASHBOARD_WIDTH = 60
+    console.print(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
+
+def draw_dashboard(stats, current_time, pkg_count):
     DASHBOARD_WIDTH = 60
     rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
     
@@ -51,15 +58,16 @@ def draw_dashboard(stats, current_time, pkg_count):
     summary_text = f"Clones {running}/{pkg_count}   |   [bold yellow]● Recover {recover}[/]   |   [bold red]● Offline {offline}[/]"
     summary_render = Text.from_markup(summary_text)
 
+    # UI FIX: Tambah no_wrap=True dan overflow ellipsis agar kolom rapi dan tidak terpotong aneh
     table = Table(box=None, padding=(0, 1), show_header=True, header_style="dim white", expand=False)
-    table.add_column("ID", style="bold cyan", width=3)
-    table.add_column("PACKAGE", style="white", width=16, no_wrap=True) 
-    table.add_column("PID", style="cyan", width=5)
-    table.add_column("STATUS", width=10)
+    table.add_column("ID", style="bold cyan", width=3, no_wrap=True)
+    table.add_column("PACKAGE", style="white", width=16, no_wrap=True, overflow="ellipsis") 
+    table.add_column("PID", style="cyan", width=5, no_wrap=True)
+    table.add_column("STATUS", width=10, no_wrap=True)
     table.add_column("UPTIME", style="white", width=9, no_wrap=True) 
-    table.add_column("L", style="dim white", width=2, justify="right")
-    table.add_column("R", style="dim white", width=2, justify="right")
-    table.add_column("C", style="dim white", width=2, justify="right")
+    table.add_column("L", style="dim white", width=2, justify="right", no_wrap=True)
+    table.add_column("R", style="dim white", width=2, justify="right", no_wrap=True)
+    table.add_column("C", style="dim white", width=2, justify="right", no_wrap=True)
     
     for idx, (pkg, s) in enumerate(stats.items(), 1):
         uptime_str = format_uptime(s['uptime_start'], current_time) if s['status'] == 'ONLINE' else "--:--:--"
@@ -79,10 +87,8 @@ def draw_dashboard(stats, current_time, pkg_count):
         
     footer_text = Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]")
     
-    renderables = logo_lines + [
-        Text(""), info_render, rule, summary_render, rule, table, rule, footer_text
-    ]
-    
+    # UI FIX: Hanya mengembalikan bagian dinamis
+    renderables = [summary_render, rule, table, rule, footer_text]
     return Group(*renderables)
 
 def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None):
@@ -92,6 +98,9 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
 
     current_time = time.time()
     pkg_count = len(packages)
+    
+    # UI FIX: Render Header statis satu kali sebelum Live loop
+    draw_static_header(pkg_count)
     
     if stats is None:
         stats = {pkg: {
@@ -142,7 +151,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                             log.error(f"CRASH DETECTED: {pkg} terhenti!")
                             log.info(f"RECOVERY: Percobaan pemulihan {stats[pkg]['consecutive_crashes']}/{max_retries} untuk {pkg}...")
                             
-                            # --- PENAMBAHAN FITUR: Backward Compatible Intent Resolution ---
                             pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
                             success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
                             
