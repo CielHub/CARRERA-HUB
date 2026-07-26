@@ -5,15 +5,15 @@ Tanggung Jawab: Menampilkan CLI interaktif dan routing eksekusi.
 import os
 import sys
 import time
+import logging
 
 from core.logger import log
 from core.config import load_config, save_config
 from core.deeplink import get_intent_url
 from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
-from core.monitor import start_monitoring
+from core.monitor import start_monitoring, draw_static_header, draw_dashboard
 from core.tester import show_test_menu
-# Jika modul sniper tidak ada, biarkan error pass atau hapus import ini jika kembali ke STABLE MURNI
 try:
     from core.sniper import sniper_agent
 except ImportError:
@@ -22,9 +22,9 @@ except ImportError:
 from core.ui import console, reset_terminal, draw_header, show_transition, draw_footer, LAYOUT_WIDTH
 from rich.prompt import Prompt
 from rich.table import Table
+from rich.live import Live
 
 def show_link_manager(config_data):
-    """Sub-menu untuk mengatur Deep Link per spesifik package."""
     all_packages = get_roblox_packages()
     if not all_packages:
         console.print("\n[bold red][!] Tidak ada package Roblox terdeteksi.[/]")
@@ -36,17 +36,14 @@ def show_link_manager(config_data):
         draw_header("LINK PER PACKAGE")
         
         table = Table(box=None, padding=(0, 0), show_header=True, header_style="dim white", width=LAYOUT_WIDTH)
-        table.add_column("ID", style="bold cyan", width=4)
-        table.add_column("PACKAGE NAME", style="white", width=25)
-        table.add_column("DEEP LINK", style="cyan", width=30)
+        table.add_column("ID", style="bold cyan", width=4, no_wrap=True)
+        table.add_column("PACKAGE NAME", style="white", width=20, no_wrap=True)
+        table.add_column("DEEP LINK", style="cyan", width=30, no_wrap=True, overflow="ellipsis")
         
         for idx, pkg in enumerate(all_packages, 1):
             pkg_key = f"PKG_{pkg}"
             link = config_data.get(pkg_key, "")
-            display_link = link[:25] + "..." if len(link) > 25 else link
-            if not display_link:
-                display_link = "[dim white]<Global Link>[/]"
-                
+            display_link = link if link else "[dim white]<Global Link>[/]"
             table.add_row(f"[{idx}]", pkg, display_link)
             
         console.print(table)
@@ -91,7 +88,6 @@ def run_auto_rejoiner():
         console.input("\n[dim]Tekan Enter untuk kembali...[/]")
         return
         
-    # --- PENAMBAHAN FITUR: Package Selection Prompt ---
     console.print("\n[bold cyan]Detected Packages:[/]")
     for idx, pkg in enumerate(all_packages, 1):
         console.print(f"[{idx}] {pkg}")
@@ -132,7 +128,6 @@ def run_auto_rejoiner():
                 packages = new_active
                 break
 
-    # --- PENAMBAHAN FITUR: Map Dictionary Link per Package ---
     intent_dict = {}
     global_intent = get_intent_url(config_data["PRIVATE_SERVER_LINK"])
     for pkg in packages:
@@ -151,18 +146,30 @@ def run_auto_rejoiner():
             'consecutive_crashes': 0, 'last_recovery_time': current_time, 'cooldown_until': 0
         }
     
-    for pkg in packages:
-        stats[pkg]['status'] = 'LOADING'
-        stats[pkg]['launch_count'] += 1
-        
-        success = launch_and_wait(pkg, intent_dict[pkg], timeout_seconds)
-        if success:
-            stats[pkg]['status'] = 'ONLINE'
-            stats[pkg]['uptime_start'] = time.time()
-        else:
-            stats[pkg]['status'] = 'FAILED'
+    # UI FIX: Mematikan cetakan log ke terminal agar tidak merusak TUI (tetap tersimpan di latest.log)
+    for handler in log.handlers[:]:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            log.removeHandler(handler)
             
-        time.sleep(delay_seconds)
+    # UI FIX: Mulai rendering Dashboard secara langsung saat Launch pertama
+    reset_terminal()
+    draw_static_header(len(packages))
+    
+    with Live(draw_dashboard(stats, current_time, len(packages)), console=console, refresh_per_second=1) as live:
+        for pkg in packages:
+            stats[pkg]['status'] = 'LOADING'
+            stats[pkg]['launch_count'] += 1
+            live.update(draw_dashboard(stats, time.time(), len(packages)))
+            
+            success = launch_and_wait(pkg, intent_dict[pkg], timeout_seconds)
+            if success:
+                stats[pkg]['status'] = 'ONLINE'
+                stats[pkg]['uptime_start'] = time.time()
+            else:
+                stats[pkg]['status'] = 'FAILED'
+                
+            time.sleep(delay_seconds)
+            live.update(draw_dashboard(stats, time.time(), len(packages)))
         
     try:
         sniper_agent.start()
@@ -183,10 +190,10 @@ def show_settings():
         display_link = link[:25] + "..." if len(link) > 25 else link
         
         table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
-        table.add_column("No", style="bold cyan", width=4)
-        table.add_column("Icon", style="white", width=3)
-        table.add_column("Config", style="white", width=25)
-        table.add_column("Value", style="dim white", justify="right", width=48)
+        table.add_column("No", style="bold cyan", width=5, no_wrap=True)
+        table.add_column("Icon", style="white", width=3, no_wrap=True)
+        table.add_column("Config", style="white", width=25, no_wrap=True)
+        table.add_column("Value", style="dim white", justify="right", width=23, no_wrap=True)
         
         table.add_row("[1]", "🔗", "Global Server Link", f"[cyan]{display_link}[/]")
         table.add_row("[2]", "⏱", "Timeout Wait", f"[cyan]{config_data.get('TIMEOUT_SECONDS', 45)}s[/]")
@@ -231,10 +238,10 @@ def show_main_menu():
         draw_header("MENU UTAMA")
         
         table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
-        table.add_column("No", style="bold cyan", width=4)
-        table.add_column("Icon", style="white", width=3)
-        table.add_column("Menu", style="white", width=70)
-        table.add_column("Chevron", style="dim white", justify="right", width=3)
+        table.add_column("No", style="bold cyan", width=5, no_wrap=True)
+        table.add_column("Icon", style="white", width=3, no_wrap=True)
+        table.add_column("Menu", style="white", width=45, no_wrap=True)
+        table.add_column("Chevron", style="dim white", justify="right", width=3, no_wrap=True)
         
         table.add_row("[1]", "▶", "Auto Rejoiner", ">")
         table.add_row("[2]", "⚙", "Settings", ">")
@@ -279,7 +286,7 @@ def show_main_menu():
             
             table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
             table.add_column("Key", style="dim white", width=20)
-            table.add_column("Value", style="bold white", width=60)
+            table.add_column("Value", style="bold white", width=35)
             
             table.add_row("Aplikasi", "CARRERA-HUB Auto Rejoiner")
             table.add_row("Versi", "[cyan]Python Modular Edition[/]")
@@ -291,11 +298,11 @@ def show_main_menu():
             console.input("\n[dim]Tekan Enter...[/]")
         elif choice == '6':
             show_transition("Shutting Down...")
-            log.info("SHUTDOWN: Script dihentikan oleh user via Menu.")
+            # Restore logger if needed or just exit
             try:
                 sniper_agent.stop()
             except Exception:
                 pass
             reset_terminal()
             sys.exit(0)
-        
+    
