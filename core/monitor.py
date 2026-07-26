@@ -35,19 +35,15 @@ def format_uptime(start_time, current_time):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def draw_dashboard(stats, current_time, pkg_count):
-    # 1. Header (Rata Kiri murni, Font Slant)
     ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
     logo_lines = [Text.from_markup(f"[bold green]{line}[/]") for line in ascii_art.split('\n') if line.strip()]
     
-    # Info Bar disingkat (Tanpa Time & User)
     info_text = f"Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}"
     info_render = Text.from_markup(f"[dim white]{info_text}[/]")
     
-    # 2. Garis Pemisah Presisi (Dibatasi 60 karakter agar sejajar dengan Info Bar)
     DASHBOARD_WIDTH = 60
     rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
     
-    # 3. Summary Bar (Loading dihapus)
     running = sum(1 for s in stats.values() if s['status'] == 'ONLINE')
     recover = sum(1 for s in stats.values() if s['status'] == 'RECOVERY')
     offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN'])
@@ -55,14 +51,12 @@ def draw_dashboard(stats, current_time, pkg_count):
     summary_text = f"Clones {running}/{pkg_count}   |   [bold yellow]● Recover {recover}[/]   |   [bold red]● Offline {offline}[/]"
     summary_render = Text.from_markup(summary_text)
 
-    # 4. Tabel TUI Profesional (Sangat Compact)
-    # Kolom diseimbangkan agar muat di layar HP dan UPTIME tidak terpotong
     table = Table(box=None, padding=(0, 1), show_header=True, header_style="dim white", expand=False)
     table.add_column("ID", style="bold cyan", width=3)
-    table.add_column("PACKAGE", style="white", width=16, no_wrap=True) # Diperkecil
+    table.add_column("PACKAGE", style="white", width=16, no_wrap=True) 
     table.add_column("PID", style="cyan", width=5)
     table.add_column("STATUS", width=10)
-    table.add_column("UPTIME", style="white", width=9, no_wrap=True) # Diperlebar & Dilindungi
+    table.add_column("UPTIME", style="white", width=9, no_wrap=True) 
     table.add_column("L", style="dim white", width=2, justify="right")
     table.add_column("R", style="dim white", width=2, justify="right")
     table.add_column("C", style="dim white", width=2, justify="right")
@@ -83,10 +77,8 @@ def draw_dashboard(stats, current_time, pkg_count):
             str(s['launch_count']), str(s['recovery_count']), str(s['crash_count'])
         )
         
-    # 5. Footer (Log dihapus total)
     footer_text = Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]")
     
-    # Render gabungan
     renderables = logo_lines + [
         Text(""), info_render, rule, summary_render, rule, table, rule, footer_text
     ]
@@ -150,7 +142,10 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                             log.error(f"CRASH DETECTED: {pkg} terhenti!")
                             log.info(f"RECOVERY: Percobaan pemulihan {stats[pkg]['consecutive_crashes']}/{max_retries} untuk {pkg}...")
                             
-                            success = launch_and_wait(pkg, intent_url, timeout_seconds)
+                            # --- PENAMBAHAN FITUR: Backward Compatible Intent Resolution ---
+                            pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
+                            success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
+                            
                             current_time = time.time() 
                             
                             if success:
