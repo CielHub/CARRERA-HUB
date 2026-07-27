@@ -214,6 +214,14 @@ def run_auto_rejoiner():
     reset_terminal()
     draw_static_header(len(packages))
     
+    # ... (Bagian atas run_auto_rejoiner tetap sama persis) ...
+    
+    # Import modul autologin di menu.py
+    try:
+        from core.autologin import detect_login_screen, perform_login
+    except ImportError:
+        pass
+
     with Live(draw_dashboard(stats, current_time, len(packages)), console=console, refresh_per_second=1) as live:
         for pkg in packages:
             stats[pkg]['status'] = 'LOADING'
@@ -221,11 +229,28 @@ def run_auto_rejoiner():
             live.update(draw_dashboard(stats, time.time(), len(packages)))
             
             success = launch_and_wait(pkg, intent_dict[pkg], timeout_seconds)
+            
+            # --- HOOK: AUTO LOGIN FALLBACK SAAT AWAL START ---
+            if not success:
+                accounts = load_accounts()
+                if pkg in accounts and detect_login_screen(pkg):
+                    stats[pkg]['status'] = 'LOGIN'
+                    live.update(draw_dashboard(stats, time.time(), len(packages)))
+                    
+                    if perform_login(pkg, accounts[pkg]['username'], accounts[pkg]['password']):
+                        stats[pkg]['status'] = 'LOADING'
+                        live.update(draw_dashboard(stats, time.time(), len(packages)))
+                        success = launch_and_wait(pkg, intent_dict[pkg], timeout_seconds)
+                    else:
+                        stats[pkg]['status'] = 'LOGIN FAILED'
+            # -------------------------------------------------
+
             if success:
                 stats[pkg]['status'] = 'ONLINE'
                 stats[pkg]['uptime_start'] = time.time()
             else:
-                stats[pkg]['status'] = 'FAILED'
+                if stats[pkg]['status'] != 'LOGIN FAILED':
+                    stats[pkg]['status'] = 'FAILED'
                 
             time.sleep(delay_seconds)
             live.update(draw_dashboard(stats, time.time(), len(packages)))
@@ -236,6 +261,7 @@ def run_auto_rejoiner():
         pass
         
     start_monitoring(packages, intent_dict, timeout_seconds, max_retries, cooldown_secs, stats)
+    
 
 def show_settings():
     config_data = load_config("config.conf")
