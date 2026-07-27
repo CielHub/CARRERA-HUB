@@ -14,7 +14,7 @@ from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
 from core.monitor import start_monitoring, draw_static_header, draw_dashboard
 from core.tester import show_test_menu
-from core.accounts import load_accounts, save_accounts  # PENAMBAHAN MODUL BARU
+from core.accounts import load_accounts, save_accounts
 
 try:
     from core.sniper import sniper_agent
@@ -67,7 +67,6 @@ def show_auto_login_menu():
                     time.sleep(1)
                     continue
                     
-                # Menggunakan parameter password=True agar input tersembunyi (hidden)
                 password = Prompt.ask("[white]Password[/]", password=True)
                 
                 if selected_pkg not in accounts:
@@ -214,14 +213,6 @@ def run_auto_rejoiner():
     reset_terminal()
     draw_static_header(len(packages))
     
-    # ... (Bagian atas run_auto_rejoiner tetap sama persis) ...
-    
-    # Import modul autologin di menu.py
-    try:
-        from core.autologin import detect_login_screen, perform_login
-    except ImportError:
-        pass
-
     with Live(draw_dashboard(stats, current_time, len(packages)), console=console, refresh_per_second=1) as live:
         for pkg in packages:
             stats[pkg]['status'] = 'LOADING'
@@ -232,24 +223,30 @@ def run_auto_rejoiner():
             
             # --- HOOK: AUTO LOGIN FALLBACK SAAT AWAL START ---
             if not success:
-                accounts = load_accounts()
-                if pkg in accounts and detect_login_screen(pkg):
+                try:
+                    from core.autologin import run as run_autologin
                     stats[pkg]['status'] = 'LOGIN'
                     live.update(draw_dashboard(stats, time.time(), len(packages)))
                     
-                    if perform_login(pkg, accounts[pkg]['username'], accounts[pkg]['password']):
+                    login_status = run_autologin(pkg)
+                    
+                    if login_status in ["SUCCESS", "ALREADY_LOGGED_IN"]:
                         stats[pkg]['status'] = 'LOADING'
                         live.update(draw_dashboard(stats, time.time(), len(packages)))
                         success = launch_and_wait(pkg, intent_dict[pkg], timeout_seconds)
+                    elif login_status == "CAPTCHA":
+                        stats[pkg]['status'] = 'CAPTCHA'
                     else:
                         stats[pkg]['status'] = 'LOGIN FAILED'
+                except ImportError:
+                    pass
             # -------------------------------------------------
-
+            
             if success:
                 stats[pkg]['status'] = 'ONLINE'
                 stats[pkg]['uptime_start'] = time.time()
             else:
-                if stats[pkg]['status'] != 'LOGIN FAILED':
+                if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
                     stats[pkg]['status'] = 'FAILED'
                 
             time.sleep(delay_seconds)
@@ -261,7 +258,6 @@ def run_auto_rejoiner():
         pass
         
     start_monitoring(packages, intent_dict, timeout_seconds, max_retries, cooldown_secs, stats)
-    
 
 def show_settings():
     config_data = load_config("config.conf")
@@ -335,7 +331,7 @@ def show_main_menu():
         
         table.add_row("[1]", "▶", "Auto Rejoiner", ">")
         table.add_row("[2]", "⚙", "Settings", ">")
-        table.add_row("[3]", "🔑", "Auto Login Roblox", ">") # MENU BARU
+        table.add_row("[3]", "🔑", "Auto Login Roblox", ">")
         table.add_row("[4]", "🧪", "Test (Unit Testing)", ">")
         table.add_row("[5]", "📝", "Logs (Lihat Log)", ">")
         table.add_row("[6]", "ⓘ", "About", ">")
