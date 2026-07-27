@@ -20,13 +20,6 @@ from rich.table import Table
 from rich.console import Group
 from rich.text import Text
 
-# --- MODULE BARU ---
-from core.accounts import load_accounts
-try:
-    from core.autologin import detect_login_screen, perform_login
-except ImportError:
-    pass
-
 def get_pid(pkg_name):
     try:
         result = subprocess.run(['pidof', pkg_name], capture_output=True, text=True)
@@ -59,7 +52,7 @@ def draw_dashboard(stats, current_time, pkg_count):
     
     running = sum(1 for s in stats.values() if s['status'] == 'ONLINE')
     recover = sum(1 for s in stats.values() if s['status'] in ['RECOVERY', 'LOGIN'])
-    offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN', 'LOGIN FAILED'])
+    offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN', 'LOGIN FAILED', 'CAPTCHA'])
     
     summary_text = f"Clones {running}/{pkg_count}   |   [bold yellow]● Recover {recover}[/]   |   [bold red]● Offline {offline}[/]"
     summary_render = Text.from_markup(summary_text)
@@ -68,7 +61,7 @@ def draw_dashboard(stats, current_time, pkg_count):
     table.add_column("ID", style="bold cyan", width=3, no_wrap=True)
     table.add_column("PACKAGE", style="white", width=16, no_wrap=True, overflow="ellipsis") 
     table.add_column("PID", style="cyan", width=5, no_wrap=True)
-    table.add_column("STATUS", width=12, no_wrap=True) # Width ditambah sedikit untuk teks LOGIN FAILED
+    table.add_column("STATUS", width=12, no_wrap=True) 
     table.add_column("UPTIME", style="white", width=9, no_wrap=True) 
     table.add_column("L", style="dim white", width=2, justify="right", no_wrap=True)
     table.add_column("R", style="dim white", width=2, justify="right", no_wrap=True)
@@ -83,9 +76,9 @@ def draw_dashboard(stats, current_time, pkg_count):
         elif s['status'] == 'RECOVERY': stat_fmt = "[bold yellow]● Recover[/]"
         elif s['status'] == 'FAILED': stat_fmt = "[bold red]● Offline[/]"
         elif s['status'] == 'COOLDOWN': stat_fmt = "[bold red]● Cooldown[/]"
-        # --- UI UPDATE: Status Auto Login ---
         elif s['status'] == 'LOGIN': stat_fmt = "[bold magenta]● Login[/]"
         elif s['status'] == 'LOGIN FAILED': stat_fmt = "[bold red]● Log Fail[/]"
+        elif s['status'] == 'CAPTCHA': stat_fmt = "[bold red]● Captcha[/]"
         else: stat_fmt = f"[white]● {s['status'][:8]}[/]"
             
         table.add_row(
@@ -162,21 +155,31 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                             
                             # --- HOOK: AUTO LOGIN FALLBACK SAAT RECOVERY ---
                             if not success:
-                                accounts = load_accounts()
-                                if pkg in accounts and detect_login_screen(pkg):
-                                    log.warning(f"LOGIN SCREEN DETECTED: {pkg} tertahan di halaman login.")
+                                try:
+                                    from core.autologin import run as run_autologin
                                     stats[pkg]['status'] = 'LOGIN'
                                     live.update(draw_dashboard(stats, current_time, pkg_count))
                                     
-                                    if perform_login(pkg, accounts[pkg]['username'], accounts[pkg]['password']):
-                                        log.info(f"AUTO LOGIN SUCCESS: Melanjutkan Join Private Server untuk {pkg}...")
+                                    login_status = run_autologin(pkg)
+                                    
+                                    if login_status in ["SUCCESS", "ALREADY_LOGGED_IN"]:
+                                        if login_status == "ALREADY_LOGGED_IN":
+                                            log.info(f"AUTO LOGIN: {pkg} sudah login. Melanjutkan Join Private Server...")
+                                        else:
+                                            log.info(f"AUTO LOGIN SUCCESS: Berhasil masuk ke Home. Melanjutkan Join Private Server untuk {pkg}...")
+                                            
                                         stats[pkg]['status'] = 'LOADING'
                                         live.update(draw_dashboard(stats, current_time, pkg_count))
                                         
-                                        # Ulangi pemanggilan Private Server setelah login
                                         success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
+                                    elif login_status == "CAPTCHA":
+                                        log.warning(f"AUTO LOGIN CAPTCHA: Terdeteksi Captcha untuk {pkg}.")
+                                        stats[pkg]['status'] = 'CAPTCHA'
                                     else:
+                                        log.warning(f"AUTO LOGIN {login_status}: Gagal memproses login untuk {pkg}.")
                                         stats[pkg]['status'] = 'LOGIN FAILED'
+                                except ImportError:
+                                    pass
                             # -----------------------------------------------
 
                             current_time = time.time() 
@@ -191,13 +194,13 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 stats[pkg]['last_recovery_time'] = current_time
                                 log.info(f"RECOVERY SUCCESS: PID baru dicatat.")
                             else:
-                                if stats[pkg]['status'] != 'LOGIN FAILED':
+                                if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
                                     log.error(f"RECOVERY FAILED: {pkg} gagal dihidupkan.")
                                     stats[pkg]['status'] = 'FAILED'
                                 
                         else:
                             stats[pkg]['pid'] = current_pid
-                            if stats[pkg]['status'] in ['FAILED', 'LOGIN FAILED']:
+                            if stats[pkg]['status'] in ['FAILED', 'LOGIN FAILED', 'CAPTCHA']:
                                 stats[pkg]['status'] = 'ONLINE'
                                 
                             if stats[pkg]['consecutive_crashes'] > 0:
@@ -212,4 +215,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 
         except KeyboardInterrupt:
             pass
-                                    
+                                        
