@@ -14,6 +14,8 @@ from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
 from core.monitor import start_monitoring, draw_static_header, draw_dashboard
 from core.tester import show_test_menu
+from core.accounts import load_accounts, save_accounts  # PENAMBAHAN MODUL BARU
+
 try:
     from core.sniper import sniper_agent
 except ImportError:
@@ -23,6 +25,65 @@ from core.ui import console, reset_terminal, draw_header, show_transition, draw_
 from rich.prompt import Prompt
 from rich.table import Table
 from rich.live import Live
+
+def show_auto_login_menu():
+    while True:
+        reset_terminal()
+        draw_header("AUTO LOGIN ROBLOX")
+        
+        all_packages = get_roblox_packages()
+        if not all_packages:
+            console.print("\n[bold red][!] Tidak ada package Roblox terdeteksi.[/]")
+            console.input("\n[dim]Tekan Enter untuk kembali...[/]")
+            return
+            
+        accounts = load_accounts()
+        
+        table = Table(box=None, padding=(0, 0), show_header=True, header_style="dim white", width=LAYOUT_WIDTH)
+        table.add_column("No", style="bold cyan", width=4, no_wrap=True)
+        table.add_column("PACKAGE NAME", style="white", width=25, no_wrap=True)
+        table.add_column("STATUS AKUN", style="green", width=30, no_wrap=True)
+        
+        for idx, pkg in enumerate(all_packages, 1):
+            status = accounts.get(pkg, {}).get("username", "[dim red]Belum Dikonfigurasi[/]")
+            table.add_row(f"[{idx}]", pkg, status)
+            
+        console.print(table)
+        draw_footer("[1,2,3..] Pilih ID Package   |   [0] Kembali ke Menu")
+        
+        choice = console.input("\n[dim]Select Package (0 untuk keluar):[/] ").strip()
+        
+        if choice == '0':
+            break
+        elif choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(all_packages):
+                selected_pkg = all_packages[idx-1]
+                
+                console.print(f"\n[bold cyan]Konfigurasi Auto Login: {selected_pkg}[/]")
+                username = console.input("[white]Username:[/] ").strip()
+                if not username:
+                    console.print("[red]Dibatalkan.[/]")
+                    time.sleep(1)
+                    continue
+                    
+                # Menggunakan parameter password=True agar input tersembunyi (hidden)
+                password = Prompt.ask("[white]Password[/]", password=True)
+                
+                if selected_pkg not in accounts:
+                    accounts[selected_pkg] = {}
+                accounts[selected_pkg]["username"] = username
+                accounts[selected_pkg]["password"] = password
+                
+                save_accounts(accounts)
+                
+                console.print("\n[bold green]Saved Successfully.[/]")
+                again = console.input("\n[dim]Configure another package? [Y/N]:[/] ").strip().upper()
+                if again != 'Y':
+                    break
+            else:
+                console.print("[bold red][!] ID tidak valid.[/]")
+                time.sleep(1)
 
 def show_link_manager(config_data):
     all_packages = get_roblox_packages()
@@ -47,7 +108,6 @@ def show_link_manager(config_data):
             table.add_row(f"[{idx}]", pkg, display_link)
             
         console.print(table)
-        # UI FIX: Menghapus label 'Simpan &' karena sudah Auto Save
         draw_footer("[1,2,3..] Pilih ID untuk edit   |   [0] Kembali")
         
         choice = console.input("\n[dim]Pilih ID (0 untuk keluar):[/] ").strip()
@@ -68,7 +128,6 @@ def show_link_manager(config_data):
                     if pkg_key in config_data:
                         del config_data[pkg_key]
                         
-                # AUTO SAVE: Langsung simpan setelah modifikasi Link Package
                 save_config(config_data, "config.conf")
             else:
                 console.print("[bold red][!] ID tidak valid.[/]")
@@ -194,7 +253,6 @@ def show_settings():
         table.add_column("Config", style="white", width=25, no_wrap=True)
         table.add_column("Value", style="dim white", justify="right", width=23, no_wrap=True)
         
-        # UI FIX: Menghapus opsi [7] Simpan Config dan menyesuaikan urutan
         table.add_row("[1]", "🔗", "Global Server Link", f"[cyan]{display_link}[/]")
         table.add_row("[2]", "⏱", "Timeout Wait", f"[cyan]{config_data.get('TIMEOUT_SECONDS', 45)}s[/]")
         table.add_row("[3]", "⏳", "Delay Package", f"[cyan]{config_data.get('DELAY_SECONDS', 3)}s[/]")
@@ -208,7 +266,6 @@ def show_settings():
         
         choice = Prompt.ask("\n[dim]Pilih (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
         
-        # AUTO SAVE: Memanggil save_config setelah setiap perubahan value yang valid
         if choice == '1':
             new_link = console.input("\n[dim]Masukkan Server Link baru:[/] ")
             if new_link.strip(): 
@@ -252,15 +309,16 @@ def show_main_menu():
         
         table.add_row("[1]", "▶", "Auto Rejoiner", ">")
         table.add_row("[2]", "⚙", "Settings", ">")
-        table.add_row("[3]", "🧪", "Test (Unit Testing)", ">")
-        table.add_row("[4]", "📝", "Logs (Lihat Log)", ">")
-        table.add_row("[5]", "ⓘ", "About", ">")
-        table.add_row("[bold red][6][/]", "[red]⏻[/]", "[red]Exit[/]", "[red]>[/]")
+        table.add_row("[3]", "🔑", "Auto Login Roblox", ">") # MENU BARU
+        table.add_row("[4]", "🧪", "Test (Unit Testing)", ">")
+        table.add_row("[5]", "📝", "Logs (Lihat Log)", ">")
+        table.add_row("[6]", "ⓘ", "About", ">")
+        table.add_row("[bold red][7][/]", "[red]⏻[/]", "[red]Exit[/]", "[red]>[/]")
         
         console.print(table)
         draw_footer("CTRL+C  Dashboard    CTRL+Z  Exit")
         
-        choice = Prompt.ask("\n[dim]Pilih menu (1-6)[/]", choices=["1", "2", "3", "4", "5", "6"])
+        choice = Prompt.ask("\n[dim]Pilih menu (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
         
         if choice == '1':
             show_transition("Starting Engine...")
@@ -269,9 +327,12 @@ def show_main_menu():
             show_transition("Loading Menu...")
             show_settings()
         elif choice == '3':
+            show_transition("Loading Auto Login...")
+            show_auto_login_menu()
+        elif choice == '4':
             show_test_menu()
             show_transition("Loading Menu...")
-        elif choice == '4':
+        elif choice == '5':
             show_transition("Fetching Logs...")
             reset_terminal()
             draw_header("LOGS VIEWER")
@@ -286,7 +347,7 @@ def show_main_menu():
             
             draw_footer("Enter  Back to Menu")
             console.input("\n[dim]Tekan Enter...[/]")
-        elif choice == '5':
+        elif choice == '6':
             show_transition("Opening About...")
             reset_terminal()
             draw_header("ABOUT")
@@ -303,7 +364,7 @@ def show_main_menu():
             console.print(table)
             draw_footer("Enter  Back to Menu")
             console.input("\n[dim]Tekan Enter...[/]")
-        elif choice == '6':
+        elif choice == '7':
             show_transition("Shutting Down...")
             try:
                 sniper_agent.stop()
@@ -311,4 +372,4 @@ def show_main_menu():
                 pass
             reset_terminal()
             sys.exit(0)
-                    
+    
