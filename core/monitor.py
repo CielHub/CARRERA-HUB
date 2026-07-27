@@ -20,6 +20,13 @@ from rich.table import Table
 from rich.console import Group
 from rich.text import Text
 
+# --- MODULE BARU ---
+from core.accounts import load_accounts
+try:
+    from core.autologin import detect_login_screen, perform_login
+except ImportError:
+    pass
+
 def get_pid(pkg_name):
     try:
         result = subprocess.run(['pidof', pkg_name], capture_output=True, text=True)
@@ -34,7 +41,6 @@ def format_uptime(start_time, current_time):
     m, s = divmod(rem, 60)
     return f"{h:02d}:{m:02d}:{s:02d}"
 
-# --- UI FIX: Fungsi render Header Statis agar logo tidak bertumpuk ---
 def draw_static_header(pkg_count):
     ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
     for line in ascii_art.split('\n'):
@@ -52,18 +58,17 @@ def draw_dashboard(stats, current_time, pkg_count):
     rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
     
     running = sum(1 for s in stats.values() if s['status'] == 'ONLINE')
-    recover = sum(1 for s in stats.values() if s['status'] == 'RECOVERY')
-    offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN'])
+    recover = sum(1 for s in stats.values() if s['status'] in ['RECOVERY', 'LOGIN'])
+    offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN', 'LOGIN FAILED'])
     
     summary_text = f"Clones {running}/{pkg_count}   |   [bold yellow]● Recover {recover}[/]   |   [bold red]● Offline {offline}[/]"
     summary_render = Text.from_markup(summary_text)
 
-    # UI FIX: Tambah no_wrap=True dan overflow ellipsis agar kolom rapi dan tidak terpotong aneh
     table = Table(box=None, padding=(0, 1), show_header=True, header_style="dim white", expand=False)
     table.add_column("ID", style="bold cyan", width=3, no_wrap=True)
     table.add_column("PACKAGE", style="white", width=16, no_wrap=True, overflow="ellipsis") 
     table.add_column("PID", style="cyan", width=5, no_wrap=True)
-    table.add_column("STATUS", width=10, no_wrap=True)
+    table.add_column("STATUS", width=12, no_wrap=True) # Width ditambah sedikit untuk teks LOGIN FAILED
     table.add_column("UPTIME", style="white", width=9, no_wrap=True) 
     table.add_column("L", style="dim white", width=2, justify="right", no_wrap=True)
     table.add_column("R", style="dim white", width=2, justify="right", no_wrap=True)
@@ -78,7 +83,10 @@ def draw_dashboard(stats, current_time, pkg_count):
         elif s['status'] == 'RECOVERY': stat_fmt = "[bold yellow]● Recover[/]"
         elif s['status'] == 'FAILED': stat_fmt = "[bold red]● Offline[/]"
         elif s['status'] == 'COOLDOWN': stat_fmt = "[bold red]● Cooldown[/]"
-        else: stat_fmt = f"[white]● {s['status']}[/]"
+        # --- UI UPDATE: Status Auto Login ---
+        elif s['status'] == 'LOGIN': stat_fmt = "[bold magenta]● Login[/]"
+        elif s['status'] == 'LOGIN FAILED': stat_fmt = "[bold red]● Log Fail[/]"
+        else: stat_fmt = f"[white]● {s['status'][:8]}[/]"
             
         table.add_row(
             f"[{idx}]", display_pkg, str(s['pid']), stat_fmt, uptime_str,
@@ -87,7 +95,6 @@ def draw_dashboard(stats, current_time, pkg_count):
         
     footer_text = Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]")
     
-    # UI FIX: Hanya mengembalikan bagian dinamis
     renderables = [summary_render, rule, table, rule, footer_text]
     return Group(*renderables)
 
@@ -99,7 +106,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     current_time = time.time()
     pkg_count = len(packages)
     
-    # UI FIX: Render Header statis satu kali sebelum Live loop
     draw_static_header(pkg_count)
     
     if stats is None:
@@ -154,6 +160,25 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                             pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
                             success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
                             
+                            # --- HOOK: AUTO LOGIN FALLBACK SAAT RECOVERY ---
+                            if not success:
+                                accounts = load_accounts()
+                                if pkg in accounts and detect_login_screen(pkg):
+                                    log.warning(f"LOGIN SCREEN DETECTED: {pkg} tertahan di halaman login.")
+                                    stats[pkg]['status'] = 'LOGIN'
+                                    live.update(draw_dashboard(stats, current_time, pkg_count))
+                                    
+                                    if perform_login(pkg, accounts[pkg]['username'], accounts[pkg]['password']):
+                                        log.info(f"AUTO LOGIN SUCCESS: Melanjutkan Join Private Server untuk {pkg}...")
+                                        stats[pkg]['status'] = 'LOADING'
+                                        live.update(draw_dashboard(stats, current_time, pkg_count))
+                                        
+                                        # Ulangi pemanggilan Private Server setelah login
+                                        success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
+                                    else:
+                                        stats[pkg]['status'] = 'LOGIN FAILED'
+                            # -----------------------------------------------
+
                             current_time = time.time() 
                             
                             if success:
@@ -166,12 +191,13 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 stats[pkg]['last_recovery_time'] = current_time
                                 log.info(f"RECOVERY SUCCESS: PID baru dicatat.")
                             else:
-                                log.error(f"RECOVERY FAILED: {pkg} gagal dihidupkan.")
-                                stats[pkg]['status'] = 'FAILED'
+                                if stats[pkg]['status'] != 'LOGIN FAILED':
+                                    log.error(f"RECOVERY FAILED: {pkg} gagal dihidupkan.")
+                                    stats[pkg]['status'] = 'FAILED'
                                 
                         else:
                             stats[pkg]['pid'] = current_pid
-                            if stats[pkg]['status'] == 'FAILED':
+                            if stats[pkg]['status'] in ['FAILED', 'LOGIN FAILED']:
                                 stats[pkg]['status'] = 'ONLINE'
                                 
                             if stats[pkg]['consecutive_crashes'] > 0:
@@ -186,4 +212,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 
         except KeyboardInterrupt:
             pass
-                            
+                                    
