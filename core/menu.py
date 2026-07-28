@@ -286,16 +286,16 @@ def show_grid_menu(config_data):
         ch_disp = config_data.get('GRID_CELL_H', 0) or "Auto"
 
         table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
-        table.add_column("No", style="bold cyan", width=5, no_wrap=True)
-        table.add_column("Config", style="white", width=25, no_wrap=True)
-        table.add_column("Value", style="dim white", justify="right", width=28, no_wrap=True)
+        table.add_column("No", style="bold cyan", width=4, no_wrap=True)
+        table.add_column("Config", style="white", width=32, no_wrap=True, overflow="ellipsis")
+        table.add_column("Value", style="dim white", justify="right", width=20, no_wrap=True)
 
         table.add_row("[1]", "Auto-Apply Grid", f"[cyan]{'ON' if config_data.get('GRID_ENABLED') else 'OFF'}[/]")
         table.add_row("[2]", "Kolom (Cols)", f"[cyan]{cols_disp}[/]")
         table.add_row("[3]", "Lebar Window (px)", f"[cyan]{cw_disp}[/]")
         table.add_row("[4]", "Tinggi Window (px)", f"[cyan]{ch_disp}[/]")
-        table.add_row("[5]", "Margin antar window (px)", f"[cyan]{config_data.get('GRID_MARGIN', 10)}[/]")
-        table.add_row("[6]", "Offset atas / status bar (px)", f"[cyan]{config_data.get('GRID_OFFSET_Y', 60)}[/]")
+        table.add_row("[5]", "Margin window (px)", f"[cyan]{config_data.get('GRID_MARGIN', 10)}[/]")
+        table.add_row("[6]", "Offset atas layar (px)", f"[cyan]{config_data.get('GRID_OFFSET_Y', 60)}[/]")
         table.add_row("[7]", "Terapkan Sekarang", ">")
         table.add_row("[8]", "Kembali", ">")
 
