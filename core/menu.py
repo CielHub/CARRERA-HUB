@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import logging
+import shutil
 
 from core.logger import log
 from core.config import load_config, save_config
@@ -15,7 +16,6 @@ from core.launcher import launch_and_wait
 from core.monitor import start_monitoring, draw_static_header, draw_dashboard
 from core.tester import show_test_menu
 from core.accounts import load_accounts, save_accounts
-from core import gridlayout
 
 try:
     from core.sniper import sniper_agent
@@ -246,16 +246,6 @@ def run_auto_rejoiner():
             if success:
                 stats[pkg]['status'] = 'ONLINE'
                 stats[pkg]['uptime_start'] = time.time()
-                # Terapkan grid dengan default 6 instance/600dpi fallback
-                if config_data.get('GRID_ENABLED', 1):
-                    gridlayout.apply_grid_single(
-                        pkg, packages,
-                        cell_w=config_data.get('GRID_CELL_W') or None,
-                        cell_h=config_data.get('GRID_CELL_H') or None,
-                        cols=config_data.get('GRID_COLS', 2),
-                        margin=config_data.get('GRID_MARGIN', 12),
-                        offset_y=config_data.get('GRID_OFFSET_Y', 90),
-                    )
             else:
                 if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
                     stats[pkg]['status'] = 'FAILED'
@@ -269,115 +259,6 @@ def run_auto_rejoiner():
         pass
         
     start_monitoring(packages, intent_dict, timeout_seconds, max_retries, cooldown_secs, stats, config_data)
-
-
-def show_grid_menu(config_data):
-    # =========================================================================
-    # OPTIMASI DEFAULT: Layar Android 600dpi | 6 Instance Floating Window
-    # =========================================================================
-    config_updated = False
-    if 'GRID_ENABLED' not in config_data:
-        config_data['GRID_ENABLED'] = 1
-        config_updated = True
-    if 'GRID_COLS' not in config_data:
-        config_data['GRID_COLS'] = 2
-        config_updated = True
-    if 'GRID_MARGIN' not in config_data:
-        config_data['GRID_MARGIN'] = 12
-        config_updated = True
-    if 'GRID_OFFSET_Y' not in config_data:
-        config_data['GRID_OFFSET_Y'] = 90
-        config_updated = True
-        
-    if config_updated:
-        save_config(config_data, "config.conf")
-
-    while True:
-        reset_terminal()
-        draw_header("GRID LAYOUT (6 INSTANCE OPTIMIZED)")
-
-        # Deteksi resolusi layar
-        screen = gridlayout.get_screen_size()
-        density = gridlayout.get_screen_density()
-        screen_str = f"{screen[0]}x{screen[1]}px" if screen else "Gagal deteksi"
-        density_str = f"{density} dpi" if density else "-"
-
-        console.print(f"[dim]Layar terdeteksi: {screen_str} ({density_str})[/]\n")
-
-        # Mengambil dan memformat value dari config
-        val_enabled = "ON" if config_data.get('GRID_ENABLED') else "OFF"
-        val_cols = str(config_data.get('GRID_COLS', 2)) if config_data.get('GRID_COLS', 2) != 0 else "Auto"
-        val_cw = str(config_data.get('GRID_CELL_W', 0)) if config_data.get('GRID_CELL_W', 0) != 0 else "Auto"
-        val_ch = str(config_data.get('GRID_CELL_H', 0)) if config_data.get('GRID_CELL_H', 0) != 0 else "Auto"
-        val_margin = str(config_data.get('GRID_MARGIN', 12))
-        val_offset = str(config_data.get('GRID_OFFSET_Y', 90))
-
-        # =========================================================================
-        # RENDERER STATIS PURE ASCII (Anti Berantakan, Anti Table, Anti Overflow)
-        # =========================================================================
-        console.print(f"  [bold cyan][1][/] [white]Auto Apply Grid   :[/] [bold green]{val_enabled}[/]")
-        console.print(f"  [bold cyan][2][/] [white]Jumlah Kolom      :[/] [cyan]{val_cols}[/]")
-        console.print(f"  [bold cyan][3][/] [white]Lebar Window      :[/] [cyan]{val_cw}[/]")
-        console.print(f"  [bold cyan][4][/] [white]Tinggi Window     :[/] [cyan]{val_ch}[/]")
-        console.print(f"  [bold cyan][5][/] [white]Margin Window     :[/] [cyan]{val_margin}[/]")
-        console.print(f"  [bold cyan][6][/] [white]Offset Atas       :[/] [cyan]{val_offset}[/]")
-        console.print("")
-        console.print(f"  [bold cyan][7][/] [white]Terapkan Sekarang[/]")
-        console.print(f"  [bold cyan][8][/] [white]Kembali[/]")
-
-        console.print("\n[dim]0 = otomatis dihitung dari resolusi layar & jumlah package[/]")
-        draw_footer("ESC / 8  Back to Menu")
-
-        choice = Prompt.ask("\n[dim]Pilih (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
-
-        if choice == '1':
-            config_data['GRID_ENABLED'] = 0 if config_data.get('GRID_ENABLED') else 1
-            save_config(config_data, "config.conf")
-        elif choice == '2':
-            val = console.input("\n[dim]Jumlah kolom (0 = auto):[/] ")
-            if val.isdigit():
-                config_data['GRID_COLS'] = int(val)
-                save_config(config_data, "config.conf")
-        elif choice == '3':
-            val = console.input("\n[dim]Lebar window dalam px (0 = auto):[/] ")
-            if val.isdigit():
-                config_data['GRID_CELL_W'] = int(val)
-                save_config(config_data, "config.conf")
-        elif choice == '4':
-            val = console.input("\n[dim]Tinggi window dalam px (0 = auto):[/] ")
-            if val.isdigit():
-                config_data['GRID_CELL_H'] = int(val)
-                save_config(config_data, "config.conf")
-        elif choice == '5':
-            val = console.input("\n[dim]Margin antar window dalam px:[/] ")
-            if val.isdigit():
-                config_data['GRID_MARGIN'] = int(val)
-                save_config(config_data, "config.conf")
-        elif choice == '6':
-            val = console.input("\n[dim]Offset dari atas layar dalam px:[/] ")
-            if val.isdigit():
-                config_data['GRID_OFFSET_Y'] = int(val)
-                save_config(config_data, "config.conf")
-        elif choice == '7':
-            all_packages = get_roblox_packages()
-            if not all_packages:
-                console.print("\n[bold red][!] Tidak ada package Roblox terdeteksi.[/]")
-            else:
-                console.print(f"\n[dim]Menerapkan grid ke {len(all_packages)} package (yang sedang berjalan)...[/]")
-                results = gridlayout.apply_grid(
-                    all_packages,
-                    cell_w=config_data.get('GRID_CELL_W') or None,
-                    cell_h=config_data.get('GRID_CELL_H') or None,
-                    cols=config_data.get('GRID_COLS') or None,
-                    margin=config_data.get('GRID_MARGIN', 12),
-                    offset_y=config_data.get('GRID_OFFSET_Y', 90),
-                )
-                ok_count = sum(1 for v in results.values() if v)
-                console.print(f"[bold green]Selesai: {ok_count}/{len(all_packages)} window berhasil diatur.[/]")
-                console.print("[dim](Package yang belum jalan otomatis dilewati.)[/]")
-            console.input("\n[dim]Tekan Enter untuk kembali...[/]")
-        elif choice == '8':
-            break
 
 def show_settings():
     config_data = load_config("config.conf")
@@ -401,13 +282,12 @@ def show_settings():
         table.add_row("[4]", "🔄", "Max Retries", f"[cyan]{config_data.get('MAX_RETRIES', 3)}x[/]")
         table.add_row("[5]", "❄", "Cooldown", f"[cyan]{config_data.get('COOLDOWN_SECONDS', 300)}s[/]")
         table.add_row("[6]", "📦", "Atur Link per Package", ">")
-        table.add_row("[7]", "▦", "Grid Layout (Freeform)", ">")
-        table.add_row("[8]", "↩", "Kembali", ">")
+        table.add_row("[7]", "↩", "Kembali", ">")
         
         console.print(table)
-        draw_footer("ESC / 8  Back to Menu")
+        draw_footer("ESC / 7  Back to Menu")
         
-        choice = Prompt.ask("\n[dim]Pilih (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
+        choice = Prompt.ask("\n[dim]Pilih (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
         
         if choice == '1':
             new_link = console.input("\n[dim]Masukkan Server Link baru:[/] ")
@@ -437,8 +317,6 @@ def show_settings():
         elif choice == '6':
             show_link_manager(config_data)
         elif choice == '7':
-            show_grid_menu(config_data)
-        elif choice == '8':
             break
 
 def show_main_menu():
