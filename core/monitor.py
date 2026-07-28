@@ -15,7 +15,6 @@ except ImportError:
 from core.logger import log
 from core.launcher import launch_and_wait
 from core.ui import console, reset_terminal
-from core import gridlayout
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
