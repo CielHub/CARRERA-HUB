@@ -452,4 +452,45 @@ def show_main_menu():
             show_auto_login_menu()
         elif choice == '4':
             show_test_menu()
-            show_transition("Loadi
+            show_transition("Loading Menu...")
+        elif choice == '5':
+            show_transition("Fetching Logs...")
+            reset_terminal()
+            draw_header("LOGS VIEWER")
+            
+            log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "latest.log")
+            if os.path.exists(log_path):
+                console.print("[dim]Menampilkan 20 baris terakhir...[/]")
+                console.print("")
+                os.system(f"tail -n 20 {log_path}")
+            else:
+                console.print("[dim]File log belum tersedia.[/]")
+            
+            draw_footer("Enter  Back to Menu")
+            console.input("\n[dim]Tekan Enter...[/]")
+        elif choice == '6':
+            show_transition("Opening About...")
+            reset_terminal()
+            draw_header("ABOUT")
+            
+            table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
+            table.add_column("Key", style="dim white", width=20)
+            table.add_column("Value", style="bold white", width=35)
+            
+            table.add_row("Aplikasi", "CARRERA-HUB Auto Rejoiner")
+            table.add_row("Versi", "[cyan]Python Modular Edition[/]")
+            table.add_row("Status", "[green]Stabil & Termux Root Ready[/]")
+            table.add_row("Developer", "[magenta]Carrera-Hub Team[/]")
+            
+            console.print(table)
+            draw_footer("Enter  Back to Menu")
+            console.input("\n[dim]Tekan Enter...[/]")
+        elif choice == '7':
+            show_transition("Shutting Down...")
+            try:
+                sniper_agent.stop()
+            except Exception:
+                pass
+            reset_terminal()
+            sys.exit(0)
+    
