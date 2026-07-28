@@ -23,6 +23,7 @@ def load_config(config_path="config.conf"):
         "GRID_CELL_H": 0,         # 0 = otomatis dihitung dari layar
         "GRID_MARGIN": 10,
         "GRID_OFFSET_Y": 60,
+        "CLEAR_CACHE_MINUTES": 30,
     }
 
     with open(config_path, 'r') as f:
@@ -59,6 +60,9 @@ def load_config(config_path="config.conf"):
                 except ValueError: pass
             elif line.startswith("GRID_OFFSET_Y="):
                 try: config["GRID_OFFSET_Y"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("CLEAR_CACHE_MINUTES="):
+                try: config["CLEAR_CACHE_MINUTES"] = int(line.split("=", 1)[1].strip('"\''))
                 except ValueError: pass
             # --- PENAMBAHAN FITUR: Dynamic Package Link Parser ---
             elif line.startswith("PKG_"):
