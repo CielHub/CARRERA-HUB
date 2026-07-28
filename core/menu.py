@@ -270,91 +270,71 @@ def run_auto_rejoiner():
         
     start_monitoring(packages, intent_dict, timeout_seconds, max_retries, cooldown_secs, stats, config_data)
 
-def _grid_term_width(min_w=32, max_w=96):
-    """
-    Deteksi lebar terminal SEBENARNYA saat itu (bukan angka tetap), khusus
-    dipakai oleh menu Grid Layout. Di-clamp biar tetap wajar walau terminal
-    melaporkan ukuran aneh (misal 0 atau sangat besar).
-    """
-    try:
-        w = shutil.get_terminal_size(fallback=(60, 20)).columns
-    except Exception:
-        w = 60
-    return max(min_w, min(w, max_w))
-
-
-def _grid_row(width, num, label, value, value_style="cyan"):
-    """
-    Render satu baris "[No] Label .... Value" yang lebarnya selalu pas
-    dengan lebar terminal SAAT ITU. Perhitungan jarak (gap) memakai teks
-    polos (tanpa tag warna Rich) supaya tag warna tidak ikut terhitung
-    sebagai lebar visual -> ini yang bikin kolom kanan-kiri gak akan
-    saling menimpa atau geser.
-
-    Kalau ruang gak cukup buat satu baris (terminal sempit / label+value
-    kepanjangan), otomatis pindah ke mode 2 baris (label lalu value di
-    baris berikutnya, indented) daripada dipaksa satu baris dan numpuk.
-    """
-    label_plain = f"[{num}] {label}"
-    value_plain = str(value)
-    min_gap = 2
-
-    if len(label_plain) + min_gap + len(value_plain) <= width:
-        gap = width - len(label_plain) - len(value_plain)
-        return (
-            f"[bold cyan][{num}][/] {label}"
-            + " " * gap
-            + f"[{value_style}]{value_plain}[/]"
-        )
-
-    # Mode fallback: satu kolom, value pindah baris biar gak overlap
-    return (
-        f"[bold cyan][{num}][/] {label}\n"
-        f"     [{value_style}]{value_plain}[/]"
-    )
-
-
 def show_grid_menu(config_data):
     while True:
         reset_terminal()
         draw_header("GRID LAYOUT (FREEFORM)")
 
-        width = _grid_term_width()
+        # --- DYNAMIC TERMINAL SIZE DETECTION ---
+        term_width = shutil.get_terminal_size(fallback=(80, 24)).columns
+        layout_width = min(term_width, 100)
+        align_mode = "center" if term_width >= 75 else "left"
 
         screen = gridlayout.get_screen_size()
         density = gridlayout.get_screen_density()
-        screen_str = f"{screen[0]}x{screen[1]}px" if screen else "Gagal deteksi"
+        screen_str = f"{screen[0]}x{screen[1]}px" if screen else "[red]Gagal deteksi[/]"
         density_str = f"{density} dpi" if density else "-"
 
-        console.print(f"[dim]Layar terdeteksi:[/] [cyan]{screen_str}[/] [dim]({density_str})[/]")
-        console.print("[dim]" + "─" * width + "[/]\n")
+        console.print(f"[dim]Layar terdeteksi:[/] [cyan]{screen_str}[/]  [dim]({density_str})[/]\n", justify=align_mode)
 
-        cols_disp = config_data.get('GRID_COLS', 0) or "Auto"
-        cw_disp = config_data.get('GRID_CELL_W', 0) or "Auto"
-        ch_disp = config_data.get('GRID_CELL_H', 0) or "Auto"
+        val_enabled = f"[cyan]{'ON' if config_data.get('GRID_ENABLED') else 'OFF'}[/]"
+        val_cols = f"[cyan]{config_data.get('GRID_COLS', 0) or 'Auto'}[/]"
+        val_cw = f"[cyan]{config_data.get('GRID_CELL_W', 0) or 'Auto'}[/]"
+        val_ch = f"[cyan]{config_data.get('GRID_CELL_H', 0) or 'Auto'}[/]"
+        val_margin = f"[cyan]{config_data.get('GRID_MARGIN', 10)}[/]"
+        val_offset = f"[cyan]{config_data.get('GRID_OFFSET_Y', 60)}[/]"
 
-        items = [
-            ("1", "Auto-Apply Grid", "ON" if config_data.get('GRID_ENABLED') else "OFF"),
-            ("2", "Kolom (Cols)", cols_disp),
-            ("3", "Lebar Window (px)", cw_disp),
-            ("4", "Tinggi Window (px)", ch_disp),
-            ("5", "Margin window (px)", config_data.get('GRID_MARGIN', 10)),
-            ("6", "Offset atas layar (px)", config_data.get('GRID_OFFSET_Y', 60)),
-            ("7", "Terapkan Sekarang", ">"),
-            ("8", "Kembali", ">"),
-        ]
+        # --- RESPONSIVE TABLE INITIALIZATION ---
+        table = Table(box=None, padding=(0, 1), show_header=False, width=layout_width, expand=True)
 
-        for num, label, value in items:
-            console.print(_grid_row(width, num, label, value))
+        if term_width >= 75:
+            # ==========================================
+            # LAYOUT 2 KOLOM (Layar Lebar / Fullscreen)
+            # ==========================================
+            table.add_column("No1", style="bold cyan", width=4, no_wrap=True)
+            table.add_column("Config1", style="white", ratio=3, no_wrap=True, overflow="ellipsis")
+            table.add_column("Val1", justify="right", ratio=2, no_wrap=True, overflow="ellipsis")
+            
+            table.add_column("No2", style="bold cyan", width=4, no_wrap=True)
+            table.add_column("Config2", style="white", ratio=3, no_wrap=True, overflow="ellipsis")
+            table.add_column("Val2", justify="right", ratio=2, no_wrap=True, overflow="ellipsis")
 
-        console.print()
-        console.print("[dim]0 = otomatis dihitung dari resolusi layar & jumlah package[/]")
-        console.print("[dim]" + "─" * width + "[/]")
-        console.print("[dim white]ESC / 8  Back to Menu[/]")
+            table.add_row("[1]", "Auto-Apply Grid", val_enabled, "[2]", "Kolom (Cols)", val_cols)
+            table.add_row("[3]", "Lebar Window (px)", val_cw, "[4]", "Tinggi Window (px)", val_ch)
+            table.add_row("[5]", "Margin window (px)", val_margin, "[6]", "Offset atas layar (px)", val_offset)
+            table.add_row("[7]", "Terapkan Sekarang", "[dim]>[/]", "[8]", "Kembali", "[dim]>[/]")
+        else:
+            # ==========================================
+            # LAYOUT 1 KOLOM (Layar Sempit / Floating)
+            # ==========================================
+            table.add_column("No", style="bold cyan", width=4, no_wrap=True)
+            table.add_column("Config", style="white", ratio=3, no_wrap=True, overflow="ellipsis")
+            table.add_column("Val", justify="right", ratio=2, no_wrap=True, overflow="ellipsis")
 
-        choice = console.input("\n[dim]Pilih (1-8):[/] ").strip()
-        if choice not in {"1", "2", "3", "4", "5", "6", "7", "8"}:
-            continue
+            table.add_row("[1]", "Auto-Apply Grid", val_enabled)
+            table.add_row("[2]", "Kolom (Cols)", val_cols)
+            table.add_row("[3]", "Lebar Window (px)", val_cw)
+            table.add_row("[4]", "Tinggi Window (px)", val_ch)
+            table.add_row("[5]", "Margin window (px)", val_margin)
+            table.add_row("[6]", "Offset atas layar (px)", val_offset)
+            table.add_row("[7]", "Terapkan Sekarang", "[dim]>[/]")
+            table.add_row("[8]", "Kembali", "[dim]>[/]")
+
+        console.print(table)
+        console.print("\n[dim]0 = otomatis dihitung dari resolusi layar & jumlah package[/]", justify=align_mode)
+        draw_footer("ESC / 8  Back to Menu")
+
+        choice = Prompt.ask("\n[dim]Pilih (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
 
         if choice == '1':
             config_data['GRID_ENABLED'] = 0 if config_data.get('GRID_ENABLED') else 1
@@ -404,7 +384,6 @@ def show_grid_menu(config_data):
             console.input("\n[dim]Tekan Enter untuk kembali...[/]")
         elif choice == '8':
             break
-
 
 def show_settings():
     config_data = load_config("config.conf")
@@ -544,4 +523,3 @@ def show_main_menu():
                 pass
             reset_terminal()
             sys.exit(0)
-    
