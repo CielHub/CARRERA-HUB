@@ -15,7 +15,7 @@ from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
 from core.monitor import start_monitoring, draw_static_header, draw_dashboard
 from core.tester import show_test_menu
-from core.accounts import load_accounts, save_accounts
+#from core.accounts import load_accounts, save_accounts
 
 try:
     from core.sniper import sniper_agent
