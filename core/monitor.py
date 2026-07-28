@@ -1,6 +1,7 @@
 """
 Modul: monitor.py
-Tanggung Jawab: Memantau status proses (PID), Dashboard Real-time, dan memicu Recovery Pintar.
+Tanggung Jawab: Memantau status proses (PID), Dashboard Real-time, memicu Recovery Pintar, 
+                dan memastikan stabilitas sebelum meluncurkan background service.
 """
 import os
 import subprocess
@@ -118,11 +119,11 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     last_check_time = current_time
     STABILITY_THRESHOLD = 300 
 
-    # --- INJEKSI CACHE CLEANER SERVICE ---
+    # --- INISIALISASI STATE CACHE CLEANER ---
     clear_cache_mins = config_data.get('CLEAR_CACHE_MINUTES', 0) if config_data else 0
-    from core.cache_cleaner import start_cache_cleaner_service
-    start_cache_cleaner_service(packages, stats, clear_cache_mins)
-    # -------------------------------------
+    cache_service_started = False
+    stable_since = None
+    # ----------------------------------------
 
     with Live(draw_dashboard(stats, current_time, pkg_count), console=console, refresh_per_second=1, transient=False) as live:
         try:
@@ -200,14 +201,18 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 stats[pkg]['last_recovery_time'] = current_time
                                 log.info(f"RECOVERY SUCCESS: PID baru dicatat.")
                                 if config_data and config_data.get('GRID_ENABLED'):
-                                    gridlayout.apply_grid_single(
-                                        pkg, packages,
-                                        cell_w=config_data.get('GRID_CELL_W') or None,
-                                        cell_h=config_data.get('GRID_CELL_H') or None,
-                                        cols=config_data.get('GRID_COLS') or None,
-                                        margin=config_data.get('GRID_MARGIN', 10),
-                                        offset_y=config_data.get('GRID_OFFSET_Y', 60),
-                                    )
+                                    try:
+                                        from core import gridlayout
+                                        gridlayout.apply_grid_single(
+                                            pkg, packages,
+                                            cell_w=config_data.get('GRID_CELL_W') or None,
+                                            cell_h=config_data.get('GRID_CELL_H') or None,
+                                            cols=config_data.get('GRID_COLS') or None,
+                                            margin=config_data.get('GRID_MARGIN', 10),
+                                            offset_y=config_data.get('GRID_OFFSET_Y', 60),
+                                        )
+                                    except ImportError:
+                                        pass
                             else:
                                 if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
                                     log.error(f"RECOVERY FAILED: {pkg} gagal dihidupkan.")
@@ -225,9 +230,27 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                     
                     last_check_time = current_time
 
+                # --- OBSERVASI STABILITAS & TRIGGER CACHE CLEANER ---
+                if clear_cache_mins > 0 and not cache_service_started:
+                    # Memastikan seluruh package dalam status ONLINE murni
+                    all_online = all(stats[p]['status'] == 'ONLINE' for p in packages)
+                    
+                    if all_online:
+                        if stable_since is None:
+                            stable_since = current_time
+                        elif current_time - stable_since >= 60:
+                            log.info("SYSTEM STABLE: Seluruh package bertahan ONLINE selama 60 detik. Menghidupkan Cache Cleaner...")
+                            from core.cache_cleaner import start_cache_cleaner_service
+                            start_cache_cleaner_service(packages, stats, clear_cache_mins)
+                            cache_service_started = True
+                    else:
+                        # Reset argo stabilitas seketika ada 1 package yang goyah
+                        stable_since = None
+                # ----------------------------------------------------
+
                 live.update(draw_dashboard(stats, current_time, pkg_count))
                 time.sleep(1)
                 
         except KeyboardInterrupt:
             pass
-                                        
+    
