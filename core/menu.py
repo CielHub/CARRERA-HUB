@@ -281,13 +281,14 @@ def show_settings():
         table.add_row("[3]", "⏳", "Delay Package", f"[cyan]{config_data.get('DELAY_SECONDS', 3)}s[/]")
         table.add_row("[4]", "🔄", "Max Retries", f"[cyan]{config_data.get('MAX_RETRIES', 3)}x[/]")
         table.add_row("[5]", "❄", "Cooldown", f"[cyan]{config_data.get('COOLDOWN_SECONDS', 300)}s[/]")
-        table.add_row("[6]", "📦", "Atur Link per Package", ">")
-        table.add_row("[7]", "↩", "Kembali", ">")
+        table.add_row("[6]", "🧹", "Auto Clear Cache", f"[cyan]{config_data.get('CLEAR_CACHE_MINUTES', 30)}m[/]")
+        table.add_row("[7]", "📦", "Atur Link per Package", ">")
+        table.add_row("[8]", "↩", "Kembali", ">")
         
         console.print(table)
-        draw_footer("ESC / 7  Back to Menu")
+        draw_footer("ESC / 8  Back to Menu")
         
-        choice = Prompt.ask("\n[dim]Pilih (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
+        choice = Prompt.ask("\n[dim]Pilih (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
         
         if choice == '1':
             new_link = console.input("\n[dim]Masukkan Server Link baru:[/] ")
@@ -315,8 +316,13 @@ def show_settings():
                 config_data['COOLDOWN_SECONDS'] = int(new_cooldown)
                 save_config(config_data, "config.conf")
         elif choice == '6':
-            show_link_manager(config_data)
+            new_cache = console.input("\n[dim]Masukkan Interval Clear Cache (menit, 0 untuk nonaktif):[/] ")
+            if new_cache.isdigit(): 
+                config_data['CLEAR_CACHE_MINUTES'] = int(new_cache)
+                save_config(config_data, "config.conf")
         elif choice == '7':
+            show_link_manager(config_data)
+        elif choice == '8':
             break
 
 def show_main_menu():
