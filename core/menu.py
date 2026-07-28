@@ -6,7 +6,6 @@ import os
 import sys
 import time
 import logging
-import shutil
 
 from core.logger import log
 from core.config import load_config, save_config
@@ -275,17 +274,12 @@ def show_grid_menu(config_data):
         reset_terminal()
         draw_header("GRID LAYOUT (FREEFORM)")
 
-        # --- DYNAMIC TERMINAL SIZE DETECTION ---
-        term_width = shutil.get_terminal_size(fallback=(80, 24)).columns
-        layout_width = min(term_width, 100)
-        align_mode = "center" if term_width >= 75 else "left"
-
         screen = gridlayout.get_screen_size()
         density = gridlayout.get_screen_density()
         screen_str = f"{screen[0]}x{screen[1]}px" if screen else "[red]Gagal deteksi[/]"
         density_str = f"{density} dpi" if density else "-"
 
-        console.print(f"[dim]Layar terdeteksi:[/] [cyan]{screen_str}[/]  [dim]({density_str})[/]\n", justify=align_mode)
+        console.print(f"[dim]Layar terdeteksi:[/] [cyan]{screen_str}[/]  [dim]({density_str})[/]\n")
 
         val_enabled = f"[cyan]{'ON' if config_data.get('GRID_ENABLED') else 'OFF'}[/]"
         val_cols = f"[cyan]{config_data.get('GRID_COLS', 0) or 'Auto'}[/]"
@@ -294,44 +288,24 @@ def show_grid_menu(config_data):
         val_margin = f"[cyan]{config_data.get('GRID_MARGIN', 10)}[/]"
         val_offset = f"[cyan]{config_data.get('GRID_OFFSET_Y', 60)}[/]"
 
-        # --- RESPONSIVE TABLE INITIALIZATION ---
-        table = Table(box=None, padding=(0, 1), show_header=False, width=layout_width, expand=True)
+        # --- LAYOUT IDENTIK DENGAN MENU SETTINGS ---
+        table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
+        table.add_column("No", style="bold cyan", width=5, no_wrap=True)
+        table.add_column("Icon", style="white", width=3, no_wrap=True)
+        table.add_column("Config", style="white", width=25, no_wrap=True)
+        table.add_column("Value", style="dim white", justify="right", width=23, no_wrap=True)
 
-        if term_width >= 75:
-            # ==========================================
-            # LAYOUT 2 KOLOM (Layar Lebar / Fullscreen)
-            # ==========================================
-            table.add_column("No1", style="bold cyan", width=4, no_wrap=True)
-            table.add_column("Config1", style="white", ratio=3, no_wrap=True, overflow="ellipsis")
-            table.add_column("Val1", justify="right", ratio=2, no_wrap=True, overflow="ellipsis")
-            
-            table.add_column("No2", style="bold cyan", width=4, no_wrap=True)
-            table.add_column("Config2", style="white", ratio=3, no_wrap=True, overflow="ellipsis")
-            table.add_column("Val2", justify="right", ratio=2, no_wrap=True, overflow="ellipsis")
-
-            table.add_row("[1]", "Auto-Apply Grid", val_enabled, "[2]", "Kolom (Cols)", val_cols)
-            table.add_row("[3]", "Lebar Window (px)", val_cw, "[4]", "Tinggi Window (px)", val_ch)
-            table.add_row("[5]", "Margin window (px)", val_margin, "[6]", "Offset atas layar (px)", val_offset)
-            table.add_row("[7]", "Terapkan Sekarang", "[dim]>[/]", "[8]", "Kembali", "[dim]>[/]")
-        else:
-            # ==========================================
-            # LAYOUT 1 KOLOM (Layar Sempit / Floating)
-            # ==========================================
-            table.add_column("No", style="bold cyan", width=4, no_wrap=True)
-            table.add_column("Config", style="white", ratio=3, no_wrap=True, overflow="ellipsis")
-            table.add_column("Val", justify="right", ratio=2, no_wrap=True, overflow="ellipsis")
-
-            table.add_row("[1]", "Auto-Apply Grid", val_enabled)
-            table.add_row("[2]", "Kolom (Cols)", val_cols)
-            table.add_row("[3]", "Lebar Window (px)", val_cw)
-            table.add_row("[4]", "Tinggi Window (px)", val_ch)
-            table.add_row("[5]", "Margin window (px)", val_margin)
-            table.add_row("[6]", "Offset atas layar (px)", val_offset)
-            table.add_row("[7]", "Terapkan Sekarang", "[dim]>[/]")
-            table.add_row("[8]", "Kembali", "[dim]>[/]")
+        table.add_row("[1]", "🔲", "Auto-Apply Grid", val_enabled)
+        table.add_row("[2]", "🔢", "Kolom (Cols)", val_cols)
+        table.add_row("[3]", "↔", "Lebar Window (px)", val_cw)
+        table.add_row("[4]", "↕", "Tinggi Window (px)", val_ch)
+        table.add_row("[5]", "📏", "Margin window (px)", val_margin)
+        table.add_row("[6]", "⬆", "Offset atas (px)", val_offset)
+        table.add_row("[7]", "▶", "Terapkan Sekarang", ">")
+        table.add_row("[8]", "↩", "Kembali", ">")
 
         console.print(table)
-        console.print("\n[dim]0 = otomatis dihitung dari resolusi layar & jumlah package[/]", justify=align_mode)
+        console.print("\n[dim]0 = otomatis dihitung dari resolusi layar & jumlah package[/]")
         draw_footer("ESC / 8  Back to Menu")
 
         choice = Prompt.ask("\n[dim]Pilih (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
