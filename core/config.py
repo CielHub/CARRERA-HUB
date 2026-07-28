@@ -16,7 +16,13 @@ def load_config(config_path="config.conf"):
         "TIMEOUT_SECONDS": 45,
         "DELAY_SECONDS": 3,
         "MAX_RETRIES": 3,
-        "COOLDOWN_SECONDS": 300
+        "COOLDOWN_SECONDS": 300,
+        "GRID_ENABLED": 0,        # 1 = auto-terapkan grid tiap kali package (re)launch
+        "GRID_COLS": 0,           # 0 = otomatis dihitung dari jumlah package
+        "GRID_CELL_W": 0,         # 0 = otomatis dihitung dari layar
+        "GRID_CELL_H": 0,         # 0 = otomatis dihitung dari layar
+        "GRID_MARGIN": 10,
+        "GRID_OFFSET_Y": 60,
     }
 
     with open(config_path, 'r') as f:
@@ -35,6 +41,24 @@ def load_config(config_path="config.conf"):
                 except ValueError: pass
             elif line.startswith("COOLDOWN_SECONDS="):
                 try: config["COOLDOWN_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("GRID_ENABLED="):
+                try: config["GRID_ENABLED"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("GRID_COLS="):
+                try: config["GRID_COLS"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("GRID_CELL_W="):
+                try: config["GRID_CELL_W"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("GRID_CELL_H="):
+                try: config["GRID_CELL_H"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("GRID_MARGIN="):
+                try: config["GRID_MARGIN"] = int(line.split("=", 1)[1].strip('"\''))
+                except ValueError: pass
+            elif line.startswith("GRID_OFFSET_Y="):
+                try: config["GRID_OFFSET_Y"] = int(line.split("=", 1)[1].strip('"\''))
                 except ValueError: pass
             # --- PENAMBAHAN FITUR: Dynamic Package Link Parser ---
             elif line.startswith("PKG_"):
