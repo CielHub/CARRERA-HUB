@@ -15,6 +15,7 @@ except ImportError:
 from core.logger import log
 from core.launcher import launch_and_wait
 from core.ui import console, reset_terminal
+from core import gridlayout
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
@@ -91,7 +92,7 @@ def draw_dashboard(stats, current_time, pkg_count):
     renderables = [summary_render, rule, table, rule, footer_text]
     return Group(*renderables)
 
-def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None):
+def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None, config_data=None):
     log.info("MONITORING: Semua package diproses. Memasuki mode penjagaan...")
     time.sleep(1)
     reset_terminal()
@@ -193,6 +194,15 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 stats[pkg]['uptime_start'] = current_time
                                 stats[pkg]['last_recovery_time'] = current_time
                                 log.info(f"RECOVERY SUCCESS: PID baru dicatat.")
+                                if config_data and config_data.get('GRID_ENABLED'):
+                                    gridlayout.apply_grid_single(
+                                        pkg, packages,
+                                        cell_w=config_data.get('GRID_CELL_W') or None,
+                                        cell_h=config_data.get('GRID_CELL_H') or None,
+                                        cols=config_data.get('GRID_COLS') or None,
+                                        margin=config_data.get('GRID_MARGIN', 10),
+                                        offset_y=config_data.get('GRID_OFFSET_Y', 60),
+                                    )
                             else:
                                 if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
                                     log.error(f"RECOVERY FAILED: {pkg} gagal dihidupkan.")
