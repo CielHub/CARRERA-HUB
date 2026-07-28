@@ -246,14 +246,15 @@ def run_auto_rejoiner():
             if success:
                 stats[pkg]['status'] = 'ONLINE'
                 stats[pkg]['uptime_start'] = time.time()
-                if config_data.get('GRID_ENABLED'):
+                # Terapkan grid dengan default 6 instance/600dpi fallback
+                if config_data.get('GRID_ENABLED', 1):
                     gridlayout.apply_grid_single(
                         pkg, packages,
                         cell_w=config_data.get('GRID_CELL_W') or None,
                         cell_h=config_data.get('GRID_CELL_H') or None,
-                        cols=config_data.get('GRID_COLS') or None,
-                        margin=config_data.get('GRID_MARGIN', 10),
-                        offset_y=config_data.get('GRID_OFFSET_Y', 60),
+                        cols=config_data.get('GRID_COLS', 2),
+                        margin=config_data.get('GRID_MARGIN', 12),
+                        offset_y=config_data.get('GRID_OFFSET_Y', 90),
                     )
             else:
                 if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
@@ -271,42 +272,59 @@ def run_auto_rejoiner():
 
 
 def show_grid_menu(config_data):
+    # =========================================================================
+    # OPTIMASI DEFAULT: Layar Android 600dpi | 6 Instance Floating Window
+    # =========================================================================
+    config_updated = False
+    if 'GRID_ENABLED' not in config_data:
+        config_data['GRID_ENABLED'] = 1
+        config_updated = True
+    if 'GRID_COLS' not in config_data:
+        config_data['GRID_COLS'] = 2
+        config_updated = True
+    if 'GRID_MARGIN' not in config_data:
+        config_data['GRID_MARGIN'] = 12
+        config_updated = True
+    if 'GRID_OFFSET_Y' not in config_data:
+        config_data['GRID_OFFSET_Y'] = 90
+        config_updated = True
+        
+    if config_updated:
+        save_config(config_data, "config.conf")
+
     while True:
         reset_terminal()
-        draw_header("GRID LAYOUT (FREEFORM)")
+        draw_header("GRID LAYOUT (6 INSTANCE OPTIMIZED)")
 
+        # Deteksi resolusi layar
         screen = gridlayout.get_screen_size()
         density = gridlayout.get_screen_density()
-        screen_str = f"{screen[0]}x{screen[1]}px" if screen else "[red]Gagal deteksi[/]"
+        screen_str = f"{screen[0]}x{screen[1]}px" if screen else "Gagal deteksi"
         density_str = f"{density} dpi" if density else "-"
 
-        console.print(f"[dim]Layar terdeteksi:[/] [cyan]{screen_str}[/]  [dim]({density_str})[/]\n")
+        console.print(f"[dim]Layar terdeteksi: {screen_str} ({density_str})[/]\n")
 
-        # Formatting Value
-        val_enabled = "[cyan]ON[/]" if config_data.get('GRID_ENABLED') else "[dim white]OFF[/]"
-        val_cols = str(config_data.get('GRID_COLS', 0)) if config_data.get('GRID_COLS', 0) != 0 else "Auto"
+        # Mengambil dan memformat value dari config
+        val_enabled = "ON" if config_data.get('GRID_ENABLED') else "OFF"
+        val_cols = str(config_data.get('GRID_COLS', 2)) if config_data.get('GRID_COLS', 2) != 0 else "Auto"
         val_cw = str(config_data.get('GRID_CELL_W', 0)) if config_data.get('GRID_CELL_W', 0) != 0 else "Auto"
         val_ch = str(config_data.get('GRID_CELL_H', 0)) if config_data.get('GRID_CELL_H', 0) != 0 else "Auto"
-        val_margin = str(config_data.get('GRID_MARGIN', 10))
-        val_offset = str(config_data.get('GRID_OFFSET_Y', 60))
+        val_margin = str(config_data.get('GRID_MARGIN', 12))
+        val_offset = str(config_data.get('GRID_OFFSET_Y', 90))
 
-        # Struktur Tabel Identik dengan show_settings()
-        table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
-        table.add_column("No", style="bold cyan", width=5, no_wrap=True)
-        table.add_column("Icon", style="white", width=3, no_wrap=True)
-        table.add_column("Config", style="white", width=25, no_wrap=True)
-        table.add_column("Value", style="dim white", justify="right", width=23, no_wrap=True)
+        # =========================================================================
+        # RENDERER STATIS PURE ASCII (Anti Berantakan, Anti Table, Anti Overflow)
+        # =========================================================================
+        console.print(f"  [bold cyan][1][/] [white]Auto Apply Grid   :[/] [bold green]{val_enabled}[/]")
+        console.print(f"  [bold cyan][2][/] [white]Jumlah Kolom      :[/] [cyan]{val_cols}[/]")
+        console.print(f"  [bold cyan][3][/] [white]Lebar Window      :[/] [cyan]{val_cw}[/]")
+        console.print(f"  [bold cyan][4][/] [white]Tinggi Window     :[/] [cyan]{val_ch}[/]")
+        console.print(f"  [bold cyan][5][/] [white]Margin Window     :[/] [cyan]{val_margin}[/]")
+        console.print(f"  [bold cyan][6][/] [white]Offset Atas       :[/] [cyan]{val_offset}[/]")
+        console.print("")
+        console.print(f"  [bold cyan][7][/] [white]Terapkan Sekarang[/]")
+        console.print(f"  [bold cyan][8][/] [white]Kembali[/]")
 
-        table.add_row("[1]", "▶", "Auto-Apply Grid", val_enabled)
-        table.add_row("[2]", "▦", "Kolom (Cols)", f"[cyan]{val_cols}[/]")
-        table.add_row("[3]", "↔", "Lebar Window (px)", f"[cyan]{val_cw}[/]")
-        table.add_row("[4]", "↕", "Tinggi Window (px)", f"[cyan]{val_ch}[/]")
-        table.add_row("[5]", "◫", "Margin Window (px)", f"[cyan]{val_margin}[/]")
-        table.add_row("[6]", "⬆", "Offset Atas (px)", f"[cyan]{val_offset}[/]")
-        table.add_row("[7]", "⚙", "Terapkan Sekarang", ">")
-        table.add_row("[8]", "↩", "Kembali", ">")
-
-        console.print(table)
         console.print("\n[dim]0 = otomatis dihitung dari resolusi layar & jumlah package[/]")
         draw_footer("ESC / 8  Back to Menu")
 
@@ -351,8 +369,8 @@ def show_grid_menu(config_data):
                     cell_w=config_data.get('GRID_CELL_W') or None,
                     cell_h=config_data.get('GRID_CELL_H') or None,
                     cols=config_data.get('GRID_COLS') or None,
-                    margin=config_data.get('GRID_MARGIN', 10),
-                    offset_y=config_data.get('GRID_OFFSET_Y', 60),
+                    margin=config_data.get('GRID_MARGIN', 12),
+                    offset_y=config_data.get('GRID_OFFSET_Y', 90),
                 )
                 ok_count = sum(1 for v in results.values() if v)
                 console.print(f"[bold green]Selesai: {ok_count}/{len(all_packages)} window berhasil diatur.[/]")
