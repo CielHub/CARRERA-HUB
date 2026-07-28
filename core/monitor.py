@@ -118,6 +118,12 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     last_check_time = current_time
     STABILITY_THRESHOLD = 300 
 
+    # --- INJEKSI CACHE CLEANER SERVICE ---
+    clear_cache_mins = config_data.get('CLEAR_CACHE_MINUTES', 0) if config_data else 0
+    from core.cache_cleaner import start_cache_cleaner_service
+    start_cache_cleaner_service(packages, stats, clear_cache_mins)
+    # -------------------------------------
+
     with Live(draw_dashboard(stats, current_time, pkg_count), console=console, refresh_per_second=1, transient=False) as live:
         try:
             while True:
