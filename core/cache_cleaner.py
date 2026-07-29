@@ -23,10 +23,17 @@ def cache_cleaner_worker(packages, stats, interval_minutes):
                 log.info(f"CACHE CLEANER: Melewati {pkg} (Status bukan ONLINE).")
                 continue
                 
-            # 3. Eksekusi pembersihan secara silent (output dialihkan ke DEVNULL)
+            # 3. Eksekusi pembersihan secara silent dan TERISOLASI dari Terminal
             try:
-                cmd = f"su -c 'rm -rf /data/data/{pkg}/cache/* && rm -rf /data/data/{pkg}/code_cache/*'"
-                subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # Menggunakan List args, menghilangkan shell=True, 
+                # menutup stdin, dan memutus File Descriptors (close_fds)
+                subprocess.run(
+                    ['su', '-c', f'rm -rf /data/data/{pkg}/cache/* && rm -rf /data/data/{pkg}/code_cache/*'],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, 
+                    stderr=subprocess.DEVNULL,
+                    close_fds=True
+                )
                 log.info(f"CACHE CLEANER: Berhasil membersihkan memori untuk {pkg}.")
             except Exception as e:
                 log.error(f"CACHE CLEANER: Gagal membersihkan memori untuk {pkg} - {str(e)}")
