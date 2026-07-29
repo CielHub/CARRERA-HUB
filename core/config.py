@@ -11,11 +11,9 @@ def load_config(config_path="config.conf"):
     example_path = "config.example.conf"
     
     # --- HOOK MIGRASI & INISIALISASI ---
-    # Jika config.conf tidak ditemukan (misal: user baru / baru di-clone)
     if not os.path.isfile(config_path):
         log.warning(f"CONFIG: File {config_path} tidak ditemukan di sistem lokal.")
         
-        # Cek apakah template config.example.conf tersedia
         if os.path.isfile(example_path):
             log.info(f"CONFIG: Menduplikasi template dari {example_path}...")
             try:
@@ -25,12 +23,11 @@ def load_config(config_path="config.conf"):
                 log.error(f"CONFIG: Gagal menyalin template konfigurasi! Error: {str(e)}")
                 sys.exit(1)
         else:
-            # Jika template juga tidak ada, matikan program karena tidak punya rujukan
             log.error(f"CONFIG: Fatal Error! Template {example_path} juga tidak ditemukan.")
             sys.exit(1)
     # -----------------------------------
 
-    # --- PARSING KONFIGURASI (LOGIKA ASLI DIPERTAHANKAN 100%) ---
+    # --- PARSING KONFIGURASI (BUG FIX SPASI GAIB) ---
     config = {
         "PRIVATE_SERVER_LINK": "",
         "TIMEOUT_SECONDS": 45,
@@ -48,49 +45,33 @@ def load_config(config_path="config.conf"):
 
     with open(config_path, 'r') as f:
         for line in f:
+            # Bersihkan ujung baris dulu
             line = line.strip()
-            if line.startswith("PRIVATE_SERVER_LINK="):
-                config["PRIVATE_SERVER_LINK"] = line.split("=", 1)[1].strip('"\'')
-            elif line.startswith("TIMEOUT_SECONDS="):
-                try: config["TIMEOUT_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("DELAY_SECONDS="):
-                try: config["DELAY_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("MAX_RETRIES="):
-                try: config["MAX_RETRIES"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("COOLDOWN_SECONDS="):
-                try: config["COOLDOWN_SECONDS"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("GRID_ENABLED="):
-                try: config["GRID_ENABLED"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("GRID_COLS="):
-                try: config["GRID_COLS"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("GRID_CELL_W="):
-                try: config["GRID_CELL_W"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("GRID_CELL_H="):
-                try: config["GRID_CELL_H"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("GRID_MARGIN="):
-                try: config["GRID_MARGIN"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("GRID_OFFSET_Y="):
-                try: config["GRID_OFFSET_Y"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("CLEAR_CACHE_MINUTES="):
-                try: config["CLEAR_CACHE_MINUTES"] = int(line.split("=", 1)[1].strip('"\''))
-                except ValueError: pass
-            elif line.startswith("PKG_"):
-                try:
-                    key, val = line.split("=", 1)
-                    config[key] = val.strip('"\'')
-                except ValueError: pass
+            
+            # Abaikan baris kosong atau komentar
+            if not line or line.startswith("#"):
+                continue
+                
+            if "=" in line:
+                key, val = line.split("=", 1)
+                # FIX: Bersihkan spasi di key dan value sebelum diproses
+                key = key.strip()
+                val = val.strip().strip('"\'')
+                
+                if key == "PRIVATE_SERVER_LINK":
+                    config[key] = val
+                elif key in ["TIMEOUT_SECONDS", "DELAY_SECONDS", "MAX_RETRIES", "COOLDOWN_SECONDS", 
+                             "GRID_ENABLED", "GRID_COLS", "GRID_CELL_W", "GRID_CELL_H", 
+                             "GRID_MARGIN", "GRID_OFFSET_Y", "CLEAR_CACHE_MINUTES"]:
+                    try: 
+                        config[key] = int(val)
+                    except ValueError: 
+                        pass
+                elif key.startswith("PKG_"):
+                    # Sekarang "PKG_com.roblox.client " akan otomatis jadi "PKG_com.roblox.client"
+                    config[key] = val
                     
-    log.info("CONFIG: Konfigurasi berhasil dimuat.")
+    log.info("CONFIG: Konfigurasi berhasil dimuat dengan aman.")
     return config
 
 def save_config(config_data, config_path="config.conf"):
@@ -101,4 +82,3 @@ def save_config(config_data, config_path="config.conf"):
             else:
                 f.write(f'{key}={value}\n')
     log.info("CONFIG: Konfigurasi berhasil disimpan.")
-    
