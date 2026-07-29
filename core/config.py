@@ -1,26 +1,46 @@
 """
 Modul: config.py
-Tanggung Jawab: Membaca, mem-parsing, dan menyimpan file config.conf.
+Tanggung Jawab: Membaca, mem-parsing, menduplikasi template (jika perlu), dan menyimpan file konfigurasi.
 """
 import os
 import sys
+import shutil
 from core.logger import log
 
 def load_config(config_path="config.conf"):
+    example_path = "config.example.conf"
+    
+    # --- HOOK MIGRASI & INISIALISASI ---
+    # Jika config.conf tidak ditemukan (misal: user baru / baru di-clone)
     if not os.path.isfile(config_path):
-        log.error(f"CONFIG: File {config_path} tidak ditemukan!")
-        sys.exit(1)
+        log.warning(f"CONFIG: File {config_path} tidak ditemukan di sistem lokal.")
+        
+        # Cek apakah template config.example.conf tersedia
+        if os.path.isfile(example_path):
+            log.info(f"CONFIG: Menduplikasi template dari {example_path}...")
+            try:
+                shutil.copy(example_path, config_path)
+                log.info(f"CONFIG: File {config_path} berhasil dibuat.")
+            except Exception as e:
+                log.error(f"CONFIG: Gagal menyalin template konfigurasi! Error: {str(e)}")
+                sys.exit(1)
+        else:
+            # Jika template juga tidak ada, matikan program karena tidak punya rujukan
+            log.error(f"CONFIG: Fatal Error! Template {example_path} juga tidak ditemukan.")
+            sys.exit(1)
+    # -----------------------------------
 
+    # --- PARSING KONFIGURASI (LOGIKA ASLI DIPERTAHANKAN 100%) ---
     config = {
         "PRIVATE_SERVER_LINK": "",
         "TIMEOUT_SECONDS": 45,
         "DELAY_SECONDS": 3,
         "MAX_RETRIES": 3,
         "COOLDOWN_SECONDS": 300,
-        "GRID_ENABLED": 0,        # 1 = auto-terapkan grid tiap kali package (re)launch
-        "GRID_COLS": 0,           # 0 = otomatis dihitung dari jumlah package
-        "GRID_CELL_W": 0,         # 0 = otomatis dihitung dari layar
-        "GRID_CELL_H": 0,         # 0 = otomatis dihitung dari layar
+        "GRID_ENABLED": 0,        
+        "GRID_COLS": 0,           
+        "GRID_CELL_W": 0,         
+        "GRID_CELL_H": 0,         
         "GRID_MARGIN": 10,
         "GRID_OFFSET_Y": 60,
         "CLEAR_CACHE_MINUTES": 30,
@@ -64,7 +84,6 @@ def load_config(config_path="config.conf"):
             elif line.startswith("CLEAR_CACHE_MINUTES="):
                 try: config["CLEAR_CACHE_MINUTES"] = int(line.split("=", 1)[1].strip('"\''))
                 except ValueError: pass
-            # --- PENAMBAHAN FITUR: Dynamic Package Link Parser ---
             elif line.startswith("PKG_"):
                 try:
                     key, val = line.split("=", 1)
