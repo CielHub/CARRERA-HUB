@@ -189,14 +189,31 @@ def run_auto_rejoiner():
                 packages = new_active
                 break
 
+    # ==========================================
+    # --- FIX BUG: INTENT DICT & GLOBAL LINK ---
+    # ==========================================
     intent_dict = {}
-    global_intent = get_intent_url(config_data["PRIVATE_SERVER_LINK"])
+    
+    # Ambil Global Link secara aman
+    global_link = config_data.get("PRIVATE_SERVER_LINK", "").strip()
+    global_intent = get_intent_url(global_link) if global_link else None
+
     for pkg in packages:
+        # Panggil dengan f-string, karena key sudah bersih dari spasi berkat config.py baru
         pkg_link = config_data.get(f"PKG_{pkg}")
+        
         if pkg_link:
+            # Jika ada spesifik link, konversi dan masukkan ke dictionary
             intent_dict[pkg] = get_intent_url(pkg_link)
         else:
-            intent_dict[pkg] = global_intent
+            # Jika tidak ada link spesifik
+            if global_intent:
+                intent_dict[pkg] = global_intent
+            else:
+                # Fatal: Tidak ada link spesifik, global link juga kosong
+                console.print(f"[bold yellow][!] PERINGATAN: Tidak ada link untuk {pkg} (Spesifik/Global). Akan terhenti di Home.[/]")
+                intent_dict[pkg] = None
+    # ==========================================
     
     current_time = time.time()
     stats = {}
