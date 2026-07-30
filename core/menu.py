@@ -342,6 +342,73 @@ def show_settings():
         elif choice == '8':
             break
 
+# Tambahkan fungsi ini di atas show_main_menu()
+def run_updater():
+    """Menangani alur UI interaktif untuk Auto Updater."""
+    from core.version import VERSION
+    from core.providers.git import GitProvider
+    from core.updater import AutoUpdater
+    
+    reset_terminal()
+    draw_header("AUTO UPDATER")
+    
+    console.print("[dim cyan]Mengecek versi terbaru di server...[/]")
+    
+    # 1. Instansiasi Orchestrator dan Provider
+    provider = GitProvider()
+    updater = AutoUpdater(provider)
+    
+    # 2. Cek Versi
+    info = updater.check_for_updates(VERSION)
+    
+    if not info.has_update:
+        console.print("\n[bold green]✔ Lu udah pake versi terbaru.[/]")
+        if info.reason:
+            console.print(f"[dim white]Detail: {info.reason}[/]")
+        draw_footer("Enter  Kembali ke Menu")
+        console.input("\n[dim]Tekan Enter...[/]")
+        return
+        
+    # 3. Tampilkan Prompt Update
+    console.print("\n[bold green]🌟 UPDATE TERSEDIA 🌟[/]")
+    
+    table = Table(box=None, padding=(0, 2), show_header=False)
+    table.add_column("Key", style="dim white")
+    table.add_column("Value", style="bold")
+    table.add_row("Versi Saat Ini", f"[red]{info.current_version}[/]")
+    table.add_row("Versi Terbaru", f"[green]{info.latest_version}[/]")
+    console.print(table)
+    
+    choice = Prompt.ask("\n[white]Mau update sekarang?[/]", choices=["Y", "N"], default="N")
+    
+    if choice.upper() == 'Y':
+        console.print("\n[dim cyan]Downloading update secara silent...[/]")
+        
+        # 4. Eksekusi Update
+        result = updater.execute_update(info.current_version, info.latest_version)
+        
+        if result.success:
+            console.print("\n[bold green]✔ Update berhasil diinstal![/]")
+            console.print("[bold yellow]Restarting sistem...[/]")
+            time.sleep(1.5)
+            
+            # --- HARD RESTART OS.EXECV ---
+            # Ini akan membunuh proses Python saat ini dan menggantinya dengan yang baru
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        else:
+            console.print("\n[bold red]✘ Update dibatalkan / gagal![/]")
+            console.print(f"[dim white]Kode Error : {result.error_code.name}[/]")
+            console.print(f"[dim white]Alasan     : {result.reason}[/]")
+            draw_footer("Enter  Kembali ke Menu")
+            console.input("\n[dim]Tekan Enter...[/]")
+    else:
+        console.print("\n[dim yellow]Update dibatalkan oleh user.[/]")
+        time.sleep(1)
+
+
+# ========================================================
+# UPDATE PADA show_main_menu()
+# ========================================================
 def show_main_menu():
     while True:
         reset_terminal()
@@ -359,12 +426,14 @@ def show_main_menu():
         table.add_row("[4]", "🧪", "Test (Unit Testing)", ">")
         table.add_row("[5]", "📝", "Logs (Lihat Log)", ">")
         table.add_row("[6]", "ⓘ", "About", ">")
-        table.add_row("[bold red][7][/]", "[red]⏻[/]", "[red]Exit[/]", "[red]>[/]")
+        # --- MENU BARU DITAMBAHKAN DI SINI ---
+        table.add_row("[7]", "🔄", "Update Program", ">")
+        table.add_row("[bold red][8][/]", "[red]⏻[/]", "[red]Exit[/]", "[red]>[/]")
         
         console.print(table)
         draw_footer("CTRL+C  Dashboard    CTRL+Z  Exit")
         
-        choice = Prompt.ask("\n[dim]Pilih menu (1-7)[/]", choices=["1", "2", "3", "4", "5", "6", "7"])
+        choice = Prompt.ask("\n[dim]Pilih menu (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
         
         if choice == '1':
             show_transition("Starting Engine...")
@@ -411,6 +480,10 @@ def show_main_menu():
             draw_footer("Enter  Back to Menu")
             console.input("\n[dim]Tekan Enter...[/]")
         elif choice == '7':
+            # --- ROUTING KE UPDATER UI ---
+            show_transition("Checking Server...")
+            run_updater()
+        elif choice == '8':
             show_transition("Shutting Down...")
             try:
                 sniper_agent.stop()
@@ -418,3 +491,4 @@ def show_main_menu():
                 pass
             reset_terminal()
             sys.exit(0)
+            
