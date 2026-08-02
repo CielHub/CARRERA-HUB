@@ -22,6 +22,9 @@ from rich.table import Table
 from rich.console import Group
 from rich.text import Text
 
+# Cache untuk ASCII Header agar tidak membebani CPU Android saat di-render tiap detik
+_CACHED_HEADER_ART = None
+
 def get_pid(pkg_name):
     try:
         result = subprocess.run(['pidof', pkg_name], capture_output=True, text=True)
@@ -37,28 +40,54 @@ def format_uptime(start_time, current_time):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def draw_static_header(pkg_count):
-    ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
-    for line in ascii_art.split('\n'):
-        if line.strip():
-            console.print(f"[bold green]{line}[/]")
-    
+    """
+    Dipertahankan untuk backward compatibility jika dipanggil oleh modul tester,
+    namun tidak direkomendasikan jika dipanggil bersamaan dengan Live Alternate Screen.
+    """
+    global _CACHED_HEADER_ART
+    if _CACHED_HEADER_ART is None:
+        try:
+            ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
+            lines = [f"[bold green]{line}[/]" for line in ascii_art.split('\n') if line.strip()]
+            _CACHED_HEADER_ART = "\n".join(lines)
+        except Exception:
+            _CACHED_HEADER_ART = "[bold green]CARRERA[/]"
+            
+    console.print(Text.from_markup(_CACHED_HEADER_ART))
     info_text = f"Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}"
     console.print(f"[dim white]{info_text}[/]")
-    
-    DASHBOARD_WIDTH = 60
-    console.print(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
+    console.print(f"[dim cyan]{'─' * 60}[/]")
 
-def draw_dashboard(stats, current_time, pkg_count):
+def draw_dashboard(stats, current_time, pkg_count, include_header=True):
+    renderables = []
     DASHBOARD_WIDTH = 60
     rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
-    
+
+    # 1. Masukkan Header ke dalam UI Live agar tidak tertimpa/terpotong Terminal
+    if include_header:
+        global _CACHED_HEADER_ART
+        if _CACHED_HEADER_ART is None:
+            try:
+                ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
+                lines = [f"[bold green]{line}[/]" for line in ascii_art.split('\n') if line.strip()]
+                _CACHED_HEADER_ART = "\n".join(lines)
+            except Exception:
+                _CACHED_HEADER_ART = "[bold green]CARRERA[/]"
+        
+        header_render = Text.from_markup(_CACHED_HEADER_ART)
+        info_render = Text.from_markup(f"[dim white]Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}[/]")
+        renderables.extend([header_render, info_render, rule])
+
+    # 2. Summary
     running = sum(1 for s in stats.values() if s['status'] == 'ONLINE')
     recover = sum(1 for s in stats.values() if s['status'] in ['RECOVERY', 'LOGIN', 'LOADING'])
     offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN', 'LOGIN FAILED', 'CAPTCHA'])
     
     summary_text = f"Clones {running}/{pkg_count}   |   [bold yellow]● Recover {recover}[/]   |   [bold red]● Offline {offline}[/]"
-    summary_render = Text.from_markup(summary_text)
+    renderables.append(Text.from_markup(summary_text))
+    renderables.append(rule)
 
+    # 3. Table
     table = Table(box=None, padding=(0, 1), show_header=True, header_style="dim white", expand=False)
     table.add_column("ID", style="bold cyan", width=3, no_wrap=True)
     table.add_column("PACKAGE", style="white", width=16, no_wrap=True, overflow="ellipsis") 
@@ -87,20 +116,18 @@ def draw_dashboard(stats, current_time, pkg_count):
             f"[{idx}]", display_pkg, str(s['pid']), stat_fmt, uptime_str,
             str(s['launch_count']), str(s['recovery_count']), str(s['crash_count'])
         )
-        
-    footer_text = Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]")
+    renderables.append(table)
+    renderables.append(rule)
     
-    renderables = [summary_render, rule, table, rule, footer_text]
+    # 4. Footer
+    renderables.append(Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]"))
+    
     return Group(*renderables)
 
 def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids):
-    """
-    Worker yang berjalan di background thread agar tidak memblokir UI Dashboard.
-    """
     try:
         success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
         
-        # --- HOOK: AUTO LOGIN FALLBACK SAAT RECOVERY ---
         if not success:
             try:
                 from core.autologin import run as run_autologin
@@ -126,7 +153,6 @@ def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_da
                     return
             except ImportError:
                 pass
-        # -----------------------------------------------
 
         current_time = time.time()
         
@@ -164,12 +190,9 @@ def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_da
 def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None, config_data=None):
     log.info("MONITORING: Semua package diproses. Memasuki mode penjagaan...")
     time.sleep(1)
-    reset_terminal()
 
     current_time = time.time()
     pkg_count = len(packages)
-    
-    draw_static_header(pkg_count)
     
     if stats is None:
         stats = {pkg: {
@@ -195,14 +218,14 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     set_console_logging(False)
 
     try:
-        with Live(draw_dashboard(stats, current_time, pkg_count), console=console, refresh_per_second=1, transient=False) as live:
+        # BUG FIX: screen=True mengaktifkan Alternate Buffer agar tidak rusak oleh keyboard
+        with Live(draw_dashboard(stats, current_time, pkg_count, include_header=True), console=console, refresh_per_second=1, transient=False, screen=True) as live:
             try:
                 while True:
                     current_time = time.time()
                     
                     if current_time - last_check_time >= check_interval:
                         for pkg in packages:
-                            # STATE LOCK: Jika package sedang diproses (recovery/login), lewati pengecekan
                             if stats[pkg]['status'] in ['RECOVERY', 'LOGIN', 'LOADING', 'CAPTCHA']:
                                 continue
                                 
@@ -232,7 +255,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 
                                 pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
                                 
-                                # FIRE AND FORGET: Delegasikan ke Thread agar UI tidak Freeze
                                 threading.Thread(
                                     target=recovery_worker,
                                     args=(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids),
@@ -251,7 +273,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                         
                         last_check_time = current_time
 
-                    # OBSERVASI STABILITAS & TRIGGER CACHE CLEANER
                     if clear_cache_mins > 0 and not cache_service_started:
                         all_online = all(stats[p]['status'] == 'ONLINE' for p in packages)
                         
@@ -266,11 +287,11 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                         else:
                             stable_since = None
 
-                    live.update(draw_dashboard(stats, current_time, pkg_count))
+                    live.update(draw_dashboard(stats, current_time, pkg_count, include_header=True))
                     time.sleep(1)
                     
             except KeyboardInterrupt:
                 pass
     finally:
         set_console_logging(True)
-
+      
