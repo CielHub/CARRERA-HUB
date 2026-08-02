@@ -133,6 +133,7 @@ def show_link_manager(config_data):
                 console.print("[bold red][!] ID tidak valid.[/]")
                 time.sleep(1)
 
+
 def run_auto_rejoiner():
     reset_terminal()
     draw_header("INITIALIZING AUTO REJOINER")
@@ -229,13 +230,15 @@ def run_auto_rejoiner():
             log.removeHandler(handler)
             
     reset_terminal()
-    draw_static_header(len(packages))
     
-    with Live(draw_dashboard(stats, current_time, len(packages)), console=console, refresh_per_second=1) as live:
+    # draw_static_header(len(packages)) <-- DIHAPUS, karena sudah dirender oleh include_header=True
+    
+    # BUG FIX: Menggunakan screen=True untuk Alternate Buffer agar UI tidak rusak oleh Keyboard Android
+    with Live(draw_dashboard(stats, time.time(), len(packages), include_header=True), console=console, refresh_per_second=1, screen=True) as live:
         for pkg in packages:
             stats[pkg]['status'] = 'LOADING'
             stats[pkg]['launch_count'] += 1
-            live.update(draw_dashboard(stats, time.time(), len(packages)))
+            live.update(draw_dashboard(stats, time.time(), len(packages), include_header=True))
             
             success = launch_and_wait(pkg, intent_dict[pkg], timeout_seconds)
             
@@ -244,13 +247,13 @@ def run_auto_rejoiner():
                 try:
                     from core.autologin import run as run_autologin
                     stats[pkg]['status'] = 'LOGIN'
-                    live.update(draw_dashboard(stats, time.time(), len(packages)))
+                    live.update(draw_dashboard(stats, time.time(), len(packages), include_header=True))
                     
                     login_status = run_autologin(pkg)
                     
                     if login_status in ["SUCCESS", "ALREADY_LOGGED_IN"]:
                         stats[pkg]['status'] = 'LOADING'
-                        live.update(draw_dashboard(stats, time.time(), len(packages)))
+                        live.update(draw_dashboard(stats, time.time(), len(packages), include_header=True))
                         success = launch_and_wait(pkg, intent_dict[pkg], timeout_seconds)
                     elif login_status == "CAPTCHA":
                         stats[pkg]['status'] = 'CAPTCHA'
@@ -268,7 +271,7 @@ def run_auto_rejoiner():
                     stats[pkg]['status'] = 'FAILED'
                 
             time.sleep(delay_seconds)
-            live.update(draw_dashboard(stats, time.time(), len(packages)))
+            live.update(draw_dashboard(stats, time.time(), len(packages), include_header=True))
         
     try:
         sniper_agent.start()
@@ -276,6 +279,7 @@ def run_auto_rejoiner():
         pass
         
     start_monitoring(packages, intent_dict, timeout_seconds, max_retries, cooldown_secs, stats, config_data)
+    
 
 def show_settings():
     config_data = load_config("config.conf")
