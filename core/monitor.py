@@ -1,12 +1,13 @@
 """
 Modul: monitor.py
 Tanggung Jawab: Memantau status proses (PID), Dashboard Real-time, memicu Recovery Pintar, 
-                dan memastikan stabilitas sebelum meluncurkan background service.
+                dan memastikan stabilitas secara Non-Blocking.
 """
 import os
 import subprocess
 import time
 import sys
+import threading
 
 try:
     import pyfiglet
@@ -52,7 +53,7 @@ def draw_dashboard(stats, current_time, pkg_count):
     rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
     
     running = sum(1 for s in stats.values() if s['status'] == 'ONLINE')
-    recover = sum(1 for s in stats.values() if s['status'] in ['RECOVERY', 'LOGIN'])
+    recover = sum(1 for s in stats.values() if s['status'] in ['RECOVERY', 'LOGIN', 'LOADING'])
     offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN', 'LOGIN FAILED', 'CAPTCHA'])
     
     summary_text = f"Clones {running}/{pkg_count}   |   [bold yellow]● Recover {recover}[/]   |   [bold red]● Offline {offline}[/]"
@@ -92,6 +93,74 @@ def draw_dashboard(stats, current_time, pkg_count):
     renderables = [summary_render, rule, table, rule, footer_text]
     return Group(*renderables)
 
+def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids):
+    """
+    Worker yang berjalan di background thread agar tidak memblokir UI Dashboard.
+    """
+    try:
+        success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
+        
+        # --- HOOK: AUTO LOGIN FALLBACK SAAT RECOVERY ---
+        if not success:
+            try:
+                from core.autologin import run as run_autologin
+                stats[pkg]['status'] = 'LOGIN'
+                
+                login_status = run_autologin(pkg)
+                
+                if login_status in ["SUCCESS", "ALREADY_LOGGED_IN"]:
+                    if login_status == "ALREADY_LOGGED_IN":
+                        log.info(f"AUTO LOGIN: {pkg} sudah login. Melanjutkan Join Private Server...")
+                    else:
+                        log.info(f"AUTO LOGIN SUCCESS: Berhasil masuk ke Home. Melanjutkan Join Private Server untuk {pkg}...")
+                        
+                    stats[pkg]['status'] = 'LOADING'
+                    success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
+                elif login_status == "CAPTCHA":
+                    log.warning(f"AUTO LOGIN CAPTCHA: Terdeteksi Captcha untuk {pkg}.")
+                    stats[pkg]['status'] = 'CAPTCHA'
+                    return
+                else:
+                    log.warning(f"AUTO LOGIN {login_status}: Gagal memproses login untuk {pkg}.")
+                    stats[pkg]['status'] = 'LOGIN FAILED'
+                    return
+            except ImportError:
+                pass
+        # -----------------------------------------------
+
+        current_time = time.time()
+        
+        if success:
+            new_pid = get_pid(pkg)
+            tracked_pids[pkg] = new_pid
+            stats[pkg]['pid'] = new_pid if new_pid else '-'
+            stats[pkg]['recovery_count'] += 1
+            stats[pkg]['status'] = 'ONLINE'
+            stats[pkg]['uptime_start'] = current_time
+            stats[pkg]['last_recovery_time'] = current_time
+            log.info(f"RECOVERY SUCCESS: PID baru dicatat untuk {pkg}.")
+            
+            if config_data and config_data.get('GRID_ENABLED'):
+                try:
+                    from core import gridlayout
+                    gridlayout.apply_grid_single(
+                        pkg, packages,
+                        cell_w=config_data.get('GRID_CELL_W') or None,
+                        cell_h=config_data.get('GRID_CELL_H') or None,
+                        cols=config_data.get('GRID_COLS') or None,
+                        margin=config_data.get('GRID_MARGIN', 10),
+                        offset_y=config_data.get('GRID_OFFSET_Y', 60),
+                    )
+                except ImportError:
+                    pass
+        else:
+            if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
+                log.error(f"RECOVERY FAILED: {pkg} gagal dihidupkan.")
+                stats[pkg]['status'] = 'FAILED'
+    except Exception as e:
+        log.error(f"RECOVERY FATAL: Exception pada background thread {pkg}: {str(e)}")
+        stats[pkg]['status'] = 'FAILED'
+
 def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None, config_data=None):
     log.info("MONITORING: Semua package diproses. Memasuki mode penjagaan...")
     time.sleep(1)
@@ -119,13 +188,10 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     last_check_time = current_time
     STABILITY_THRESHOLD = 300 
 
-    # --- INISIALISASI STATE CACHE CLEANER ---
     clear_cache_mins = config_data.get('CLEAR_CACHE_MINUTES', 0) if config_data else 0
     cache_service_started = False
     stable_since = None
-    # ----------------------------------------
 
-    # Bisukan output logging ke console stdout selama Live Dashboard berjalan
     set_console_logging(False)
 
     try:
@@ -136,6 +202,10 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                     
                     if current_time - last_check_time >= check_interval:
                         for pkg in packages:
+                            # STATE LOCK: Jika package sedang diproses (recovery/login), lewati pengecekan
+                            if stats[pkg]['status'] in ['RECOVERY', 'LOGIN', 'LOADING', 'CAPTCHA']:
+                                continue
+                                
                             if stats[pkg]['cooldown_until'] > current_time:
                                 stats[pkg]['status'] = 'COOLDOWN'
                                 stats[pkg]['pid'] = '-'
@@ -156,72 +226,19 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
 
                                 stats[pkg]['status'] = 'RECOVERY'
                                 stats[pkg]['pid'] = '-'
-                                live.update(draw_dashboard(stats, current_time, pkg_count))
                                 
                                 log.error(f"CRASH DETECTED: {pkg} terhenti!")
-                                log.info(f"RECOVERY: Percobaan pemulihan {stats[pkg]['consecutive_crashes']}/{max_retries} untuk {pkg}...")
+                                log.info(f"RECOVERY: Memicu thread pemulihan {stats[pkg]['consecutive_crashes']}/{max_retries} untuk {pkg}...")
                                 
                                 pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
-                                success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
                                 
-                                # --- HOOK: AUTO LOGIN FALLBACK SAAT RECOVERY ---
-                                if not success:
-                                    try:
-                                        from core.autologin import run as run_autologin
-                                        stats[pkg]['status'] = 'LOGIN'
-                                        live.update(draw_dashboard(stats, current_time, pkg_count))
-                                        
-                                        login_status = run_autologin(pkg)
-                                        
-                                        if login_status in ["SUCCESS", "ALREADY_LOGGED_IN"]:
-                                            if login_status == "ALREADY_LOGGED_IN":
-                                                log.info(f"AUTO LOGIN: {pkg} sudah login. Melanjutkan Join Private Server...")
-                                            else:
-                                                log.info(f"AUTO LOGIN SUCCESS: Berhasil masuk ke Home. Melanjutkan Join Private Server untuk {pkg}...")
-                                                
-                                            stats[pkg]['status'] = 'LOADING'
-                                            live.update(draw_dashboard(stats, current_time, pkg_count))
-                                            
-                                            success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
-                                        elif login_status == "CAPTCHA":
-                                            log.warning(f"AUTO LOGIN CAPTCHA: Terdeteksi Captcha untuk {pkg}.")
-                                            stats[pkg]['status'] = 'CAPTCHA'
-                                        else:
-                                            log.warning(f"AUTO LOGIN {login_status}: Gagal memproses login untuk {pkg}.")
-                                            stats[pkg]['status'] = 'LOGIN FAILED'
-                                    except ImportError:
-                                        pass
-                                # -----------------------------------------------
-
-                                current_time = time.time() 
+                                # FIRE AND FORGET: Delegasikan ke Thread agar UI tidak Freeze
+                                threading.Thread(
+                                    target=recovery_worker,
+                                    args=(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids),
+                                    daemon=True
+                                ).start()
                                 
-                                if success:
-                                    new_pid = get_pid(pkg)
-                                    tracked_pids[pkg] = new_pid
-                                    stats[pkg]['pid'] = new_pid if new_pid else '-'
-                                    stats[pkg]['recovery_count'] += 1
-                                    stats[pkg]['status'] = 'ONLINE'
-                                    stats[pkg]['uptime_start'] = current_time
-                                    stats[pkg]['last_recovery_time'] = current_time
-                                    log.info(f"RECOVERY SUCCESS: PID baru dicatat.")
-                                    if config_data and config_data.get('GRID_ENABLED'):
-                                        try:
-                                            from core import gridlayout
-                                            gridlayout.apply_grid_single(
-                                                pkg, packages,
-                                                cell_w=config_data.get('GRID_CELL_W') or None,
-                                                cell_h=config_data.get('GRID_CELL_H') or None,
-                                                cols=config_data.get('GRID_COLS') or None,
-                                                margin=config_data.get('GRID_MARGIN', 10),
-                                                offset_y=config_data.get('GRID_OFFSET_Y', 60),
-                                            )
-                                        except ImportError:
-                                            pass
-                                else:
-                                    if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
-                                        log.error(f"RECOVERY FAILED: {pkg} gagal dihidupkan.")
-                                        stats[pkg]['status'] = 'FAILED'
-                                    
                             else:
                                 stats[pkg]['pid'] = current_pid
                                 if stats[pkg]['status'] in ['FAILED', 'LOGIN FAILED', 'CAPTCHA']:
@@ -234,7 +251,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                         
                         last_check_time = current_time
 
-                    # --- OBSERVASI STABILITAS & TRIGGER CACHE CLEANER ---
+                    # OBSERVASI STABILITAS & TRIGGER CACHE CLEANER
                     if clear_cache_mins > 0 and not cache_service_started:
                         all_online = all(stats[p]['status'] == 'ONLINE' for p in packages)
                         
@@ -248,7 +265,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 cache_service_started = True
                         else:
                             stable_since = None
-                    # ----------------------------------------------------
 
                     live.update(draw_dashboard(stats, current_time, pkg_count))
                     time.sleep(1)
@@ -256,6 +272,5 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
             except KeyboardInterrupt:
                 pass
     finally:
-        # Kembalikan output logging ke console saat Dashboard dihentikan (CTRL+C)
         set_console_logging(True)
-                                      
+
