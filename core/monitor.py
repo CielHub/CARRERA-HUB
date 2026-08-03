@@ -230,12 +230,14 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
 
                             stats[pkg]["status"] = "RECOVERY"
 
-                            graceful_kill(
+                            success = graceful_kill(
                                 pid,
                                 pkg
                             )
 
-                            stats[pkg]["has_error"] = True
+                            if success:
+                                stats[pkg]["status"] = "RECOVERY"
+                                stats[pkg]["has_error"] = True
 
                             break
           
@@ -253,7 +255,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                             
                             # RECOVERY UNTUK LOGCAT DIHIDUPKAN KEMBALI
                             if stats[pkg].get('has_error'):
-                                os.system(f"su -c 'am force-stop {pkg}'")
                                 stats[pkg]['has_error'] = False
                                 stats[pkg]['status'] = 'RECOVERY'
                                 stats[pkg]['pid'] = '-'
