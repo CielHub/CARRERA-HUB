@@ -215,16 +215,29 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 while True:
                     current_time = time.time()
                     while has_event():
+
                         event = get_event()
+
                         if event is None:
                             break
 
                         pid = event["pid"]
 
                         for pkg in packages:
-                            if stats[pkg]["pid"] == pid and stats[pkg]["status"] == "ONLINE":
-                               stats[pkg]["has_error"] = True
-                               break
+
+                            if stats[pkg]["pid"] != pid:
+                                continue
+
+                            stats[pkg]["status"] = "RECOVERY"
+
+                            graceful_kill(
+                                pid,
+                                pkg
+                            )
+
+                            stats[pkg]["has_error"] = True
+
+                            break
           
                     if current_time - last_check_time >= check_interval:
                         for pkg in packages:
