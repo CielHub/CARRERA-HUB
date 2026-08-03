@@ -1,19 +1,18 @@
-# error_detector_r9x4m.py
 """
 Modul : error_detector.py
 
-Arsitektur Baru (v2)
+Phase 1 - Background Error Detector
 
-Tujuan:
-- Tidak mengganggu rich.Live
-- Tidak pernah menyentuh dashboard
-- Tidak pernah mengubah stats
-- Tidak pernah print/log ke terminal
-- Tidak memakai logcat -d
-- Tidak memakai logcat -c
-- Hanya membaca log Roblox
-- Hanya membaca FLog::Network
-- Mendukung multi clone menggunakan PID
+Tanggung Jawab:
+- Menjalankan SATU daemon logcat.
+- Hanya membaca tag Roblox.
+- Hanya membaca FLog::Network.
+- Hanya mendeteksi Error 266/267/277/279/280.
+- Mengambil PID.
+- Mengirim event ke Queue.
+- Tidak menyentuh stats.
+- Tidak melakukan recovery.
+- Tidak mencetak apapun ke terminal.
 """
 
 import subprocess
@@ -23,7 +22,7 @@ import re
 import time
 
 # ==========================================================
-# INTERNAL EVENT QUEUE
+# EVENT QUEUE
 # ==========================================================
 
 _event_queue = queue.Queue()
@@ -32,9 +31,13 @@ _event_queue = queue.Queue()
 # REGEX
 # ==========================================================
 
-PID_PATTERN = re.compile(r"Roblox\s+\(\s*(\d+)\)")
+PID_PATTERN = re.compile(
+    r"Roblox\s+\(\s*(\d+)\)"
+)
 
-NETWORK_PATTERN = re.compile(r"\[FLog::Network\]")
+NETWORK_PATTERN = re.compile(
+    r"\[FLog::Network\]"
+)
 
 REASON_PATTERN = re.compile(
     r"reason\s*:\s*(266|267|277|279|280)",
@@ -42,28 +45,34 @@ REASON_PATTERN = re.compile(
 )
 
 # ==========================================================
-# DAEMON
+# DETECTOR
 # ==========================================================
 
 class ErrorDetector:
 
     def __init__(self):
 
-        self.proc = None
-        self.running = False
+        self._running = False
+        self._thread = None
 
     def start(self):
 
-        if self.running:
+        if self._running:
             return
 
-        self.running = True
+        self._running = True
 
-        threading.Thread(
+        self._thread = threading.Thread(
             target=self._worker,
             daemon=True,
             name="RobloxErrorDetector"
-        ).start()
+        )
+
+        self._thread.start()
+
+    def stop(self):
+
+        self._running = False
 
     def _worker(self):
 
@@ -73,11 +82,11 @@ class ErrorDetector:
             "logcat -v brief -s Roblox"
         ]
 
-        while self.running:
+        while self._running:
 
             try:
 
-                self.proc = subprocess.Popen(
+                process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
@@ -85,24 +94,18 @@ class ErrorDetector:
                     text=True,
                     encoding="utf-8",
                     errors="ignore",
-                    bufsize=1,
+                    bufsize=1
                 )
 
-                while self.running:
+                while self._running:
 
-                    line = self.proc.stdout.readline()
+                    line = process.stdout.readline()
 
                     if not line:
                         break
 
-                    # hanya log network roblox
+                    # hanya log network Roblox
                     if not NETWORK_PATTERN.search(line):
-                        continue
-
-                    # hanya reason yg kita pedulikan
-                    reason_match = REASON_PATTERN.search(line)
-
-                    if not reason_match:
                         continue
 
                     pid_match = PID_PATTERN.search(line)
@@ -110,28 +113,28 @@ class ErrorDetector:
                     if not pid_match:
                         continue
 
+                    reason_match = REASON_PATTERN.search(line)
+
+                    if not reason_match:
+                        continue
+
                     event = {
+
                         "pid": pid_match.group(1),
+
                         "reason": int(reason_match.group(1)),
-                        "line": line.strip(),
-                        "timestamp": time.time()
+
+                        "timestamp": time.time(),
+
+                        "raw": line.strip()
+
                     }
 
                     _event_queue.put(event)
 
             except Exception:
+
                 time.sleep(2)
-
-    def stop(self):
-
-        self.running = False
-
-        try:
-            if self.proc:
-                self.proc.kill()
-        except Exception:
-            pass
-
 
 # ==========================================================
 # SINGLETON
@@ -144,9 +147,6 @@ _detector = ErrorDetector()
 # ==========================================================
 
 def start_error_detector():
-    """
-    Dipanggil sekali dari monitor.py
-    """
     _detector.start()
 
 
@@ -155,7 +155,6 @@ def stop_error_detector():
 
 
 def has_event():
-
     return not _event_queue.empty()
 
 
