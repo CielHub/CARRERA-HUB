@@ -15,6 +15,7 @@ from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
 from core.monitor import start_monitoring, draw_static_header, draw_dashboard
 from core.tester import show_test_menu
+from core.cache_cleaner import clean_package_cache
 #from core.accounts import load_accounts, save_accounts
 
 try:
@@ -133,7 +134,6 @@ def show_link_manager(config_data):
                 console.print("[bold red][!] ID tidak valid.[/]")
                 time.sleep(1)
 
-
 def run_auto_rejoiner():
     reset_terminal()
     draw_header("INITIALIZING AUTO REJOINER")
@@ -190,31 +190,22 @@ def run_auto_rejoiner():
                 packages = new_active
                 break
 
-    # ==========================================
-    # --- FIX BUG: INTENT DICT & GLOBAL LINK ---
-    # ==========================================
     intent_dict = {}
     
-    # Ambil Global Link secara aman
     global_link = config_data.get("PRIVATE_SERVER_LINK", "").strip()
     global_intent = get_intent_url(global_link) if global_link else None
 
     for pkg in packages:
-        # Panggil dengan f-string, karena key sudah bersih dari spasi berkat config.py baru
         pkg_link = config_data.get(f"PKG_{pkg}")
         
         if pkg_link:
-            # Jika ada spesifik link, konversi dan masukkan ke dictionary
             intent_dict[pkg] = get_intent_url(pkg_link)
         else:
-            # Jika tidak ada link spesifik
             if global_intent:
                 intent_dict[pkg] = global_intent
             else:
-                # Fatal: Tidak ada link spesifik, global link juga kosong
                 console.print(f"[bold yellow][!] PERINGATAN: Tidak ada link untuk {pkg} (Spesifik/Global). Akan terhenti di Home.[/]")
                 intent_dict[pkg] = None
-    # ==========================================
     
     current_time = time.time()
     stats = {}
@@ -231,18 +222,18 @@ def run_auto_rejoiner():
             
     reset_terminal()
     
-    # draw_static_header(len(packages)) <-- DIHAPUS, karena sudah dirender oleh include_header=True
-    
-    # BUG FIX: Menggunakan screen=True untuk Alternate Buffer agar UI tidak rusak oleh Keyboard Android
     with Live(draw_dashboard(stats, time.time(), len(packages), include_header=True), console=console, refresh_per_second=1, screen=True) as live:
         for pkg in packages:
+            # --- PEMBERSIHAN CACHE AMAN SEBELUM INITIAL LAUNCH ---
+            clean_package_cache(pkg)
+            # -----------------------------------------------------
+
             stats[pkg]['status'] = 'LOADING'
             stats[pkg]['launch_count'] += 1
             live.update(draw_dashboard(stats, time.time(), len(packages), include_header=True))
             
             success = launch_and_wait(pkg, intent_dict[pkg], timeout_seconds)
             
-            # --- HOOK: AUTO LOGIN FALLBACK SAAT AWAL START ---
             if not success:
                 try:
                     from core.autologin import run as run_autologin
@@ -261,7 +252,6 @@ def run_auto_rejoiner():
                         stats[pkg]['status'] = 'LOGIN FAILED'
                 except ImportError:
                     pass
-            # -------------------------------------------------
             
             if success:
                 stats[pkg]['status'] = 'ONLINE'
