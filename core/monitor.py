@@ -1,13 +1,13 @@
 """
 Modul: monitor.py
-Tanggung Jawab: Memantau status proses (PID), Dashboard Real-time, memicu Recovery Pintar, 
-                dan mengelola deteksi Error In-Game secara Non-Blocking.
+Tanggung Jawab: Memantau status proses, Dashboard Real-time (Responsive), memicu Recovery Pintar.
 """
 import os
 import subprocess
 import time
 import sys
 import threading
+import shutil
 
 try:
     import pyfiglet
@@ -42,22 +42,31 @@ def format_uptime(start_time, current_time):
 
 def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     renderables = []
-    DASHBOARD_WIDTH = 60
+    # Deteksi ukuran terminal saat ini
+    term_cols, term_lines = shutil.get_terminal_size()
+    
+    DASHBOARD_WIDTH = min(60, term_cols)
     rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
 
     if include_header:
-        global _CACHED_HEADER_ART
-        if _CACHED_HEADER_ART is None:
-            try:
-                ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
-                lines = [f"[bold green]{line}[/]" for line in ascii_art.split('\n') if line.strip()]
-                _CACHED_HEADER_ART = "\n".join(lines)
-            except Exception:
-                _CACHED_HEADER_ART = "[bold green]CARRERA[/]"
-        
-        header_render = Text.from_markup(_CACHED_HEADER_ART)
-        info_render = Text.from_markup(f"[dim white]Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}[/]")
-        renderables.extend([header_render, info_render, rule])
+        # BUG FIX: Jika tinggi terminal kurang dari 22 (karena Floating Window), gunakan Compact Mode
+        if term_lines > 22:
+            global _CACHED_HEADER_ART
+            if _CACHED_HEADER_ART is None:
+                try:
+                    ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
+                    lines = [f"[bold green]{line}[/]" for line in ascii_art.split('\n') if line.strip()]
+                    _CACHED_HEADER_ART = "\n".join(lines)
+                except Exception:
+                    _CACHED_HEADER_ART = "[bold green]CARRERA[/]"
+            
+            header_render = Text.from_markup(_CACHED_HEADER_ART)
+            info_render = Text.from_markup(f"[dim white]Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}[/]")
+            renderables.extend([header_render, info_render, rule])
+        else:
+            # Mode Rapat (Compact) untuk layar sempit
+            header_render = Text.from_markup(f"[bold green]CARRERA-HUB[/] [dim white]| Compact Mode | Packages {pkg_count}[/]")
+            renderables.extend([header_render, rule])
 
     running = sum(1 for s in stats.values() if s['status'] == 'ONLINE')
     recover = sum(1 for s in stats.values() if s['status'] in ['RECOVERY', 'LOGIN', 'LOADING'])
@@ -98,14 +107,14 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     renderables.append(table)
     renderables.append(rule)
     
-    renderables.append(Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]"))
+    # Sembunyikan footer kontrol di layar sempit untuk menghemat baris
+    if term_lines > 22:
+        renderables.append(Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]"))
     
     return Group(*renderables)
 
 def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids):
     try:
-        # Memberikan waktu independen 15 detik bagi server Roblox 
-        # untuk melepas sesi lama sebelum menghidupkan clone kembali.
         log.info(f"RECOVERY: Menunggu 15 detik untuk {pkg} agar server Roblox melepas data...")
         time.sleep(15)
 
@@ -197,7 +206,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     set_console_logging(False)
 
     try:
-        # BUG FIX: screen=False membuat dashboard dicetak inline ke standard history buffer tanpa volatile.
         with Live(draw_dashboard(stats, current_time, pkg_count, include_header=True), console=console, refresh_per_second=1, transient=False, screen=False) as live:
             try:
                 while True:
@@ -215,7 +223,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 
                             current_pid = get_pid(pkg)
                             
-                            # RECOVERY DIHIDUPKAN KEMBALI DENGAN REGEX YANG AKURAT
                             if stats[pkg].get('has_error'):
                                 os.system(f"su -c 'am force-stop {pkg}'")
                                 stats[pkg]['has_error'] = False
@@ -269,4 +276,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-  
+      
