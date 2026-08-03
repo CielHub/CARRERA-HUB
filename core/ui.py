@@ -19,9 +19,8 @@ console = Console()
 LAYOUT_WIDTH = 60
 
 def reset_terminal():
-    """Membersihkan layar terminal secara total murni."""
-    sys.stdout.write('\033c\033[2J\033[3J\033[H')
-    sys.stdout.flush()
+    """Membersihkan layar terminal secara aman tanpa merusak history (scrollback)."""
+    # BUG FIX: Menghapus \033c dan \033[3J yang merusak fungsi zoom Termux
     os.system('clear' if os.name == 'posix' else 'cls')
 
 def get_compact_header(title="CARRERA-HUB v1.0", user="root", pkg_count="-", status="Active"):
@@ -38,24 +37,22 @@ def get_compact_header(title="CARRERA-HUB v1.0", user="root", pkg_count="-", sta
     return header_text
 
 def draw_header(subtitle="MENU"):
-    """Membangun Header Rata Kiri dengan Lebar Tetap (60 Karakter)."""
-    # 1. Logo Pyfiglet (Rata Kiri)
-    ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
+    """Membangun Header Rata Kiri dengan desain padat (Compact) untuk layar kecil."""
+    # 1. Logo Pyfiglet (Menggunakan font 'small' untuk menghemat ruang vertikal)
+    try:
+        ascii_art = pyfiglet.figlet_format("CARRERA", font="small")
+    except Exception:
+        ascii_art = pyfiglet.figlet_format("CARRERA") # Fallback aman
+        
     for line in ascii_art.split('\n'):
         if line.strip():
             console.print(f"[bold green]{line}[/]")
     
-    # 2. Subtitle Halaman
-    console.print(f"[bold cyan]{subtitle}[/]")
-    console.print("")
+    # 2. Info Bar Padat (Menggabungkan Subtitle dan Info agar tidak boros baris)
+    console.print(f"[bold cyan]{subtitle}[/] [dim white]| Version 1.0.0 | User root[/]")
     
-    # 3. Info Bar (Teks diatur agar persis berjumlah 60 karakter, berhenti di 'y')
-    info_text = "Version 1.0.0      |      User root      |      Status Ready"
-    console.print(f"[dim white]{info_text}[/]")
-    
-    # 4. Garis Pemisah Tipis (Hanya sepanjang 60 karakter)
+    # 3. Garis Pemisah Tipis
     console.print("[dim cyan]" + "─" * LAYOUT_WIDTH + "[/]")
-    console.print("")
 
 def show_transition(message="Loading..."):
     """Menampilkan transisi spinner modern sebelum berpindah halaman."""
@@ -65,6 +62,5 @@ def show_transition(message="Loading..."):
 
 def draw_footer(text="CTRL+C  Dashboard    CTRL+Z  Exit"):
     """Mencetak Footer minimalis di bagian bawah (Rata Kiri)."""
-    console.print("") 
-    console.print(f"[dim white]{text}[/]")
-    
+    console.print(f"\n[dim white]{text}[/]") # Menggabungkan enter dan teks ke satu baris
+
