@@ -1,18 +1,18 @@
 """
 Modul : error_detector.py
 
-Phase 1 - Background Error Detector
+Phase 1.1
 
 Tanggung Jawab:
-- Menjalankan SATU daemon logcat.
-- Hanya membaca tag Roblox.
-- Hanya membaca FLog::Network.
-- Hanya mendeteksi Error 266/267/277/279/280.
-- Mengambil PID.
-- Mengirim event ke Queue.
-- Tidak menyentuh stats.
-- Tidak melakukan recovery.
-- Tidak mencetak apapun ke terminal.
+- Menjalankan SATU daemon logcat
+- Hanya membaca tag Roblox
+- Hanya membaca FLog::Network
+- Mengambil PID
+- Mengambil Reason
+- Debounce event agar tidak spam
+- Mengirim event ke Queue
+- Tidak menyentuh stats
+- Tidak melakukan recovery
 """
 
 import subprocess
@@ -26,6 +26,12 @@ import time
 # ==========================================================
 
 _event_queue = queue.Queue()
+
+# Debounce per PID
+_last_event = {}
+
+# Lama debounce (detik)
+DEBOUNCE_SECONDS = 5
 
 # ==========================================================
 # REGEX
@@ -51,7 +57,6 @@ REASON_PATTERN = re.compile(
 class ErrorDetector:
 
     def __init__(self):
-
         self._running = False
         self._thread = None
 
@@ -71,7 +76,6 @@ class ErrorDetector:
         self._thread.start()
 
     def stop(self):
-
         self._running = False
 
     def _worker(self):
@@ -104,7 +108,6 @@ class ErrorDetector:
                     if not line:
                         break
 
-                    # hanya log network Roblox
                     if not NETWORK_PATTERN.search(line):
                         continue
 
@@ -118,22 +121,28 @@ class ErrorDetector:
                     if not reason_match:
                         continue
 
+                    pid = pid_match.group(1)
+
+                    now = time.time()
+
+                    last = _last_event.get(pid, 0)
+
+                    # Abaikan event PID yang sama selama 5 detik
+                    if now - last < DEBOUNCE_SECONDS:
+                        continue
+
+                    _last_event[pid] = now
+
                     event = {
-
-                        "pid": pid_match.group(1),
-
+                        "pid": pid,
                         "reason": int(reason_match.group(1)),
-
-                        "timestamp": time.time(),
-
+                        "timestamp": now,
                         "raw": line.strip()
-
                     }
 
                     _event_queue.put(event)
 
             except Exception:
-
                 time.sleep(2)
 
 # ==========================================================
