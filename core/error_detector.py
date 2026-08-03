@@ -1,57 +1,125 @@
+# error_detector_x7k9q.py
 """
 Modul: error_detector.py
-Tanggung Jawab: Membaca logcat menggunakan metode Periodic Snapshot (Polling) agar tidak merusak UI Terminal.
+
+Tanggung Jawab:
+- Menjalankan SATU proses logcat daemon di background.
+- Tidak pernah melakukan print / console.print / log.info.
+- Tidak pernah menyentuh rich.Live.
+- Tidak pernah mengubah stats.
+- Hanya mengirim event ke Queue.
+- Aman untuk multi clone.
 """
+
 import subprocess
 import threading
+import queue
 import re
-import time
 
-# REGEX BARU: Menggunakan kata kunci emas langsung dari Network Engine C++ Roblox
-LOGCAT_PATTERN = "(?i)(reason: 266|reason: 267|reason: 277|reason: 279|reason: 280|requests player disconnect)"
+# ============================================================
+# EVENT QUEUE
+# ============================================================
 
-def _logcat_watcher(stats):
-    """Worker daemon yang bangun setiap 5 detik untuk mengecek log, lalu tidur kembali."""
-    # 1. Bersihkan sisa logcat OS di awal
-    subprocess.run(['su', '-c', 'logcat -c'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
+_event_queue = queue.Queue()
+
+# ============================================================
+# ROBLOX NETWORK PATTERN
+# ============================================================
+
+LOGCAT_PATTERN = re.compile(
+    r"(?i)(requests player disconnect|reason:\s*266|reason:\s*267|reason:\s*277|reason:\s*279|reason:\s*280)"
+)
+
+PID_PATTERN = re.compile(r"\(\s*(\d+)\)")
+
+# ============================================================
+# DAEMON WORKER
+# ============================================================
+
+def _logcat_daemon():
+    """
+    Membuka SATU proses logcat permanen.
+
+    Tidak ada:
+        - polling
+        - sleep
+        - logcat -d
+        - logcat -c
+    """
+
+    cmd = [
+        "su",
+        "-c",
+        "logcat -v brief"
+    ]
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+        )
+
+    except Exception:
+        return
+
     while True:
-        # 2. Fase Tidur: Biarkan UI rich.live merender dengan tenang tanpa interupsi
-        time.sleep(5) 
-        
-        # 3. Fase Snapshot: Ambil dump logcat saat ini lalu langsung tutup (parameter -d)
-        cmd = ['su', '-c', f'logcat -d -v brief -e "{LOGCAT_PATTERN}"']
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            output = result.stdout
-            
-            # 4. Fase Analisis: Jika ada teks log yang tertangkap
-            if output and output.strip():
-                lines = output.strip().split('\n')
-                for line in lines:
-                    # Ekstrak PID
-                    match = re.search(r'\(\s*(\d+)\)', line)
-                    if match:
-                        pid = str(match.group(1))
-                        
-                        # Cocokkan dengan package kita yang sedang ONLINE
-                        for pkg, data in stats.items():
-                            if data.get('pid') == pid and data.get('status') == 'ONLINE':
-                                if not data.get('has_error'):
-                                    
-                                    # Tandai error secara silent (tanpa print/log ke terminal)
-                                    data['has_error'] = True
-                                    
-                                    # Segera bersihkan logcat agar error ini tidak terbaca dobel di siklus berikutnya
-                                    subprocess.run(['su', '-c', 'logcat -c'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                                break
-        except Exception:
-            # Silent fail: abaikan error Python agar tidak mencetak apapun ke terminal
-            pass
 
-def start_error_detector(stats):
-    """Fungsi hook untuk dihidupkan dari monitor.py"""
-    watcher_thread = threading.Thread(target=_logcat_watcher, args=(stats,), daemon=True)
-    watcher_thread.start()
-    
+        line = proc.stdout.readline()
+
+        if not line:
+            break
+
+        if not LOGCAT_PATTERN.search(line):
+            continue
+
+        pid_match = PID_PATTERN.search(line)
+
+        if not pid_match:
+            continue
+
+        pid = pid_match.group(1)
+
+        event = {
+            "pid": pid,
+            "line": line.strip()
+        }
+
+        _event_queue.put(event)
+
+# ============================================================
+# PUBLIC API
+# ============================================================
+
+def start_error_detector():
+    """
+    Memulai daemon sekali saja.
+    """
+
+    thread = threading.Thread(
+        target=_logcat_daemon,
+        daemon=True,
+        name="ErrorDetector"
+    )
+
+    thread.start()
+
+# ============================================================
+# EVENT API
+# ============================================================
+
+def has_event():
+    return not _event_queue.empty()
+
+
+def get_event():
+
+    try:
+        return _event_queue.get_nowait()
+
+    except queue.Empty:
+        return None
