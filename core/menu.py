@@ -13,7 +13,7 @@ from core.config import load_config, save_config
 from core.deeplink import get_intent_url
 from core.scanner import get_roblox_packages
 from core.launcher import launch_and_wait
-from core.monitor import start_monitoring, draw_static_header, draw_dashboard
+from core.monitor import start_monitoring, draw_dashboard
 from core.tester import show_test_menu
 from core.cache_cleaner import clean_package_cache
 #from core.accounts import load_accounts, save_accounts
@@ -41,7 +41,8 @@ def show_auto_login_menu():
             
         accounts = load_accounts()
         
-        table = Table(box=None, padding=(0, 0), show_header=True, header_style="dim white", width=LAYOUT_WIDTH)
+        # BUG FIX: Menghapus width absolut agar responsif
+        table = Table(box=None, padding=(0, 0), show_header=True, header_style="dim white")
         table.add_column("No", style="bold cyan", width=4, no_wrap=True)
         table.add_column("PACKAGE NAME", style="white", width=25, no_wrap=True)
         table.add_column("STATUS AKUN", style="green", width=30, no_wrap=True)
@@ -97,7 +98,8 @@ def show_link_manager(config_data):
         reset_terminal()
         draw_header("LINK PER PACKAGE")
         
-        table = Table(box=None, padding=(0, 0), show_header=True, header_style="dim white", width=LAYOUT_WIDTH)
+        # BUG FIX: Menghapus width absolut agar responsif
+        table = Table(box=None, padding=(0, 0), show_header=True, header_style="dim white")
         table.add_column("ID", style="bold cyan", width=4, no_wrap=True)
         table.add_column("PACKAGE NAME", style="white", width=20, no_wrap=True)
         table.add_column("DEEP LINK", style="cyan", width=30, no_wrap=True, overflow="ellipsis")
@@ -224,10 +226,8 @@ def run_auto_rejoiner():
     
     with Live(draw_dashboard(stats, time.time(), len(packages), include_header=True), console=console, refresh_per_second=1, screen=True) as live:
         for pkg in packages:
-            # --- PEMBERSIHAN CACHE AMAN SEBELUM INITIAL LAUNCH ---
             clean_package_cache(pkg)
-            # -----------------------------------------------------
-
+            
             stats[pkg]['status'] = 'LOADING'
             stats[pkg]['launch_count'] += 1
             live.update(draw_dashboard(stats, time.time(), len(packages), include_header=True))
@@ -269,7 +269,6 @@ def run_auto_rejoiner():
         pass
         
     start_monitoring(packages, intent_dict, timeout_seconds, max_retries, cooldown_secs, stats, config_data)
-    
 
 def show_settings():
     config_data = load_config("config.conf")
@@ -281,7 +280,8 @@ def show_settings():
         link = config_data.get('PRIVATE_SERVER_LINK', '')
         display_link = link[:25] + "..." if len(link) > 25 else link
         
-        table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
+        # BUG FIX: Menghapus width absolut agar responsif
+        table = Table(box=None, padding=(0, 0), show_header=False)
         table.add_column("No", style="bold cyan", width=5, no_wrap=True)
         table.add_column("Icon", style="white", width=3, no_wrap=True)
         table.add_column("Config", style="white", width=25, no_wrap=True)
@@ -336,9 +336,7 @@ def show_settings():
         elif choice == '8':
             break
 
-# Tambahkan fungsi ini di atas show_main_menu()
 def run_updater():
-    """Menangani alur UI interaktif untuk Auto Updater."""
     from core.version import VERSION
     from core.providers.git import GitProvider
     from core.updater import AutoUpdater
@@ -348,11 +346,9 @@ def run_updater():
     
     console.print("[dim cyan]Mengecek versi terbaru di server...[/]")
     
-    # 1. Instansiasi Orchestrator dan Provider
     provider = GitProvider()
     updater = AutoUpdater(provider)
     
-    # 2. Cek Versi
     info = updater.check_for_updates(VERSION)
     
     if not info.has_update:
@@ -363,7 +359,6 @@ def run_updater():
         console.input("\n[dim]Tekan Enter...[/]")
         return
         
-    # 3. Tampilkan Prompt Update
     console.print("\n[bold green]🌟 UPDATE TERSEDIA 🌟[/]")
     
     table = Table(box=None, padding=(0, 2), show_header=False)
@@ -378,16 +373,12 @@ def run_updater():
     if choice.upper() == 'Y':
         console.print("\n[dim cyan]Downloading update secara silent...[/]")
         
-        # 4. Eksekusi Update
         result = updater.execute_update(info.current_version, info.latest_version)
         
         if result.success:
             console.print("\n[bold green]✔ Update berhasil diinstal![/]")
             console.print("[bold yellow]Restarting sistem...[/]")
             time.sleep(1.5)
-            
-            # --- HARD RESTART OS.EXECV ---
-            # Ini akan membunuh proses Python saat ini dan menggantinya dengan yang baru
             os.execv(sys.executable, [sys.executable] + sys.argv)
         else:
             console.print("\n[bold red]✘ Update dibatalkan / gagal![/]")
@@ -399,16 +390,13 @@ def run_updater():
         console.print("\n[dim yellow]Update dibatalkan oleh user.[/]")
         time.sleep(1)
 
-
-# ========================================================
-# UPDATE PADA show_main_menu()
-# ========================================================
 def show_main_menu():
     while True:
         reset_terminal()
         draw_header("MENU UTAMA")
         
-        table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
+        # BUG FIX: Menghapus width absolut agar responsif
+        table = Table(box=None, padding=(0, 0), show_header=False)
         table.add_column("No", style="bold cyan", width=5, no_wrap=True)
         table.add_column("Icon", style="white", width=3, no_wrap=True)
         table.add_column("Menu", style="white", width=45, no_wrap=True)
@@ -420,7 +408,6 @@ def show_main_menu():
         table.add_row("[4]", "🧪", "Test (Unit Testing)", ">")
         table.add_row("[5]", "📝", "Logs (Lihat Log)", ">")
         table.add_row("[6]", "ⓘ", "About", ">")
-        # --- MENU BARU DITAMBAHKAN DI SINI ---
         table.add_row("[7]", "🔄", "Update Program", ">")
         table.add_row("[bold red][8][/]", "[red]⏻[/]", "[red]Exit[/]", "[red]>[/]")
         
@@ -461,7 +448,7 @@ def show_main_menu():
             reset_terminal()
             draw_header("ABOUT")
             
-            table = Table(box=None, padding=(0, 0), show_header=False, width=LAYOUT_WIDTH)
+            table = Table(box=None, padding=(0, 0), show_header=False)
             table.add_column("Key", style="dim white", width=20)
             table.add_column("Value", style="bold white", width=35)
             
@@ -474,7 +461,6 @@ def show_main_menu():
             draw_footer("Enter  Back to Menu")
             console.input("\n[dim]Tekan Enter...[/]")
         elif choice == '7':
-            # --- ROUTING KE UPDATER UI ---
             show_transition("Checking Server...")
             run_updater()
         elif choice == '8':
