@@ -228,7 +228,8 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                             if stats[pkg]["pid"] != pid:
                                 continue
 
-                            stats[pkg]["status"] = "RECOVERY"
+                            if stats[pkg]["status"] == "RECOVERY":
+                                break
 
                             success = graceful_kill(
                                 pid,
