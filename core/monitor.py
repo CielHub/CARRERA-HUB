@@ -17,12 +17,12 @@ except ImportError:
 from core.logger import log, set_console_logging
 from core.launcher import launch_and_wait
 from core.ui import console, reset_terminal
+from core.cache_cleaner import clean_package_cache
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
 from rich.text import Text
 
-# Cache untuk ASCII Header agar tidak membebani CPU Android saat di-render tiap detik
 _CACHED_HEADER_ART = None
 
 def get_pid(pkg_name):
@@ -40,10 +40,6 @@ def format_uptime(start_time, current_time):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def draw_static_header(pkg_count):
-    """
-    Dipertahankan untuk backward compatibility jika dipanggil oleh modul tester,
-    namun tidak direkomendasikan jika dipanggil bersamaan dengan Live Alternate Screen.
-    """
     global _CACHED_HEADER_ART
     if _CACHED_HEADER_ART is None:
         try:
@@ -63,7 +59,6 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     DASHBOARD_WIDTH = 60
     rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
 
-    # 1. Masukkan Header ke dalam UI Live agar tidak tertimpa/terpotong Terminal
     if include_header:
         global _CACHED_HEADER_ART
         if _CACHED_HEADER_ART is None:
@@ -78,7 +73,6 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
         info_render = Text.from_markup(f"[dim white]Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}[/]")
         renderables.extend([header_render, info_render, rule])
 
-    # 2. Summary
     running = sum(1 for s in stats.values() if s['status'] == 'ONLINE')
     recover = sum(1 for s in stats.values() if s['status'] in ['RECOVERY', 'LOGIN', 'LOADING'])
     offline = sum(1 for s in stats.values() if s['status'] in ['FAILED', 'COOLDOWN', 'LOGIN FAILED', 'CAPTCHA'])
@@ -87,7 +81,6 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     renderables.append(Text.from_markup(summary_text))
     renderables.append(rule)
 
-    # 3. Table
     table = Table(box=None, padding=(0, 1), show_header=True, header_style="dim white", expand=False)
     table.add_column("ID", style="bold cyan", width=3, no_wrap=True)
     table.add_column("PACKAGE", style="white", width=16, no_wrap=True, overflow="ellipsis") 
@@ -119,13 +112,16 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     renderables.append(table)
     renderables.append(rule)
     
-    # 4. Footer
     renderables.append(Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]"))
     
     return Group(*renderables)
 
 def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids):
     try:
+        # --- PEMBERSIHAN CACHE AMAN SEBELUM RECOVERY ---
+        clean_package_cache(pkg)
+        # -----------------------------------------------
+
         success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
         
         if not success:
@@ -211,14 +207,9 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     last_check_time = current_time
     STABILITY_THRESHOLD = 300 
 
-    clear_cache_mins = config_data.get('CLEAR_CACHE_MINUTES', 0) if config_data else 0
-    cache_service_started = False
-    stable_since = None
-
     set_console_logging(False)
 
     try:
-        # BUG FIX: screen=True mengaktifkan Alternate Buffer agar tidak rusak oleh keyboard
         with Live(draw_dashboard(stats, current_time, pkg_count, include_header=True), console=console, refresh_per_second=1, transient=False, screen=True) as live:
             try:
                 while True:
@@ -272,20 +263,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                         stats[pkg]['consecutive_crashes'] = 0
                         
                         last_check_time = current_time
-
-                    if clear_cache_mins > 0 and not cache_service_started:
-                        all_online = all(stats[p]['status'] == 'ONLINE' for p in packages)
-                        
-                        if all_online:
-                            if stable_since is None:
-                                stable_since = current_time
-                            elif current_time - stable_since >= 60:
-                                log.info("SYSTEM STABLE: Seluruh package bertahan ONLINE selama 60 detik. Menghidupkan Cache Cleaner...")
-                                from core.cache_cleaner import start_cache_cleaner_service
-                                start_cache_cleaner_service(packages, stats, clear_cache_mins)
-                                cache_service_started = True
-                        else:
-                            stable_since = None
 
                     live.update(draw_dashboard(stats, current_time, pkg_count, include_header=True))
                     time.sleep(1)
