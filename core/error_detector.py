@@ -1,119 +1,161 @@
-# error_detector_x7k9q.py
+# error_detector_r9x4m.py
 """
-Modul: error_detector.py
+Modul : error_detector.py
 
-Tanggung Jawab:
-- Menjalankan SATU proses logcat daemon di background.
-- Tidak pernah melakukan print / console.print / log.info.
-- Tidak pernah menyentuh rich.Live.
-- Tidak pernah mengubah stats.
-- Hanya mengirim event ke Queue.
-- Aman untuk multi clone.
+Arsitektur Baru (v2)
+
+Tujuan:
+- Tidak mengganggu rich.Live
+- Tidak pernah menyentuh dashboard
+- Tidak pernah mengubah stats
+- Tidak pernah print/log ke terminal
+- Tidak memakai logcat -d
+- Tidak memakai logcat -c
+- Hanya membaca log Roblox
+- Hanya membaca FLog::Network
+- Mendukung multi clone menggunakan PID
 """
 
 import subprocess
 import threading
 import queue
 import re
+import time
 
-# ============================================================
-# EVENT QUEUE
-# ============================================================
+# ==========================================================
+# INTERNAL EVENT QUEUE
+# ==========================================================
 
 _event_queue = queue.Queue()
 
-# ============================================================
-# ROBLOX NETWORK PATTERN
-# ============================================================
+# ==========================================================
+# REGEX
+# ==========================================================
 
-LOGCAT_PATTERN = re.compile(
-    r"(?i)(requests player disconnect|reason:\s*266|reason:\s*267|reason:\s*277|reason:\s*279|reason:\s*280)"
+PID_PATTERN = re.compile(r"Roblox\s+\(\s*(\d+)\)")
+
+NETWORK_PATTERN = re.compile(r"\[FLog::Network\]")
+
+REASON_PATTERN = re.compile(
+    r"reason\s*:\s*(266|267|277|279|280)",
+    re.IGNORECASE
 )
 
-PID_PATTERN = re.compile(r"\(\s*(\d+)\)")
+# ==========================================================
+# DAEMON
+# ==========================================================
 
-# ============================================================
-# DAEMON WORKER
-# ============================================================
+class ErrorDetector:
 
-def _logcat_daemon():
-    """
-    Membuka SATU proses logcat permanen.
+    def __init__(self):
 
-    Tidak ada:
-        - polling
-        - sleep
-        - logcat -d
-        - logcat -c
-    """
+        self.proc = None
+        self.running = False
 
-    cmd = [
-        "su",
-        "-c",
-        "logcat -v brief"
-    ]
+    def start(self):
 
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            encoding="utf-8",
-            errors="ignore",
-            bufsize=1,
-        )
+        if self.running:
+            return
 
-    except Exception:
-        return
+        self.running = True
 
-    while True:
+        threading.Thread(
+            target=self._worker,
+            daemon=True,
+            name="RobloxErrorDetector"
+        ).start()
 
-        line = proc.stdout.readline()
+    def _worker(self):
 
-        if not line:
-            break
+        cmd = [
+            "su",
+            "-c",
+            "logcat -v brief -s Roblox"
+        ]
 
-        if not LOGCAT_PATTERN.search(line):
-            continue
+        while self.running:
 
-        pid_match = PID_PATTERN.search(line)
+            try:
 
-        if not pid_match:
-            continue
+                self.proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    encoding="utf-8",
+                    errors="ignore",
+                    bufsize=1,
+                )
 
-        pid = pid_match.group(1)
+                while self.running:
 
-        event = {
-            "pid": pid,
-            "line": line.strip()
-        }
+                    line = self.proc.stdout.readline()
 
-        _event_queue.put(event)
+                    if not line:
+                        break
 
-# ============================================================
+                    # hanya log network roblox
+                    if not NETWORK_PATTERN.search(line):
+                        continue
+
+                    # hanya reason yg kita pedulikan
+                    reason_match = REASON_PATTERN.search(line)
+
+                    if not reason_match:
+                        continue
+
+                    pid_match = PID_PATTERN.search(line)
+
+                    if not pid_match:
+                        continue
+
+                    event = {
+                        "pid": pid_match.group(1),
+                        "reason": int(reason_match.group(1)),
+                        "line": line.strip(),
+                        "timestamp": time.time()
+                    }
+
+                    _event_queue.put(event)
+
+            except Exception:
+                time.sleep(2)
+
+    def stop(self):
+
+        self.running = False
+
+        try:
+            if self.proc:
+                self.proc.kill()
+        except Exception:
+            pass
+
+
+# ==========================================================
+# SINGLETON
+# ==========================================================
+
+_detector = ErrorDetector()
+
+# ==========================================================
 # PUBLIC API
-# ============================================================
+# ==========================================================
 
 def start_error_detector():
     """
-    Memulai daemon sekali saja.
+    Dipanggil sekali dari monitor.py
     """
+    _detector.start()
 
-    thread = threading.Thread(
-        target=_logcat_daemon,
-        daemon=True,
-        name="ErrorDetector"
-    )
 
-    thread.start()
+def stop_error_detector():
+    _detector.stop()
 
-# ============================================================
-# EVENT API
-# ============================================================
 
 def has_event():
+
     return not _event_queue.empty()
 
 
