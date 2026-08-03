@@ -104,8 +104,15 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
 
 def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids):
     try:
-        clean_package_cache(pkg)
+        # --- DATASTORE LOCK COOLDOWN ---
+        # Memberikan waktu independen 15 detik bagi server Roblox 
+        # untuk melepas sesi lama sebelum menghidupkan clone kembali.
+        log.info(f"RECOVERY: Menunggu 15 detik untuk {pkg} agar server Roblox melepas data...")
+        time.sleep(15)
+        # -------------------------------
 
+        clean_package_cache(pkg)
+        stats[pkg]['status'] = 'LOADING'
         success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
         
         if not success:
@@ -173,7 +180,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
             'has_error': False
         } for pkg in packages}
     else:
-        # Backward compatibility jika dipanggil dari file menu.py lama
         for pkg in packages:
             if 'has_error' not in stats[pkg]:
                 stats[pkg]['has_error'] = False
@@ -184,9 +190,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
         tracked_pids[pkg] = pid
         stats[pkg]['pid'] = pid if pid else '-'
 
-    # --- MEMULAI ERROR DETECTOR ---
     start_error_detector(stats)
-    # ------------------------------
 
     check_interval = 15
     last_check_time = current_time
@@ -212,7 +216,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 
                             current_pid = get_pid(pkg)
                             
-                            # --- CEK INTERSEPT ERROR IN-GAME SEBELUM CEK CRASH OS ---
                             if stats[pkg].get('has_error'):
                                 os.system(f"su -c 'am force-stop {pkg}'")
                                 stats[pkg]['has_error'] = False
@@ -227,7 +230,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                     daemon=True
                                 ).start()
                                 continue
-                            # --------------------------------------------------------
 
                             if not current_pid or current_pid != tracked_pids[pkg]:
                                 stats[pkg]['crash_count'] += 1
@@ -267,4 +269,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-                    
+              
