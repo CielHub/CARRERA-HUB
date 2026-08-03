@@ -23,7 +23,8 @@ try:
 except ImportError:
     pass
 
-from core.ui import console, reset_terminal, draw_header, show_transition, draw_footer, LAYOUT_WIDTH
+# BUG FIX: Import safe_prompt_ask dan safe_console_input
+from core.ui import console, reset_terminal, draw_header, show_transition, draw_footer, safe_prompt_ask, safe_console_input
 from rich.prompt import Prompt
 from rich.table import Table
 from rich.live import Live
@@ -36,12 +37,11 @@ def show_auto_login_menu():
         all_packages = get_roblox_packages()
         if not all_packages:
             console.print("\n[bold red][!] Tidak ada package Roblox terdeteksi.[/]")
-            console.input("\n[dim]Tekan Enter untuk kembali...[/]")
+            safe_console_input("\n[dim]Tekan Enter untuk kembali...[/]")
             return
             
         accounts = load_accounts()
         
-        # BUG FIX: Menghapus width absolut agar responsif
         table = Table(box=None, padding=(0, 0), show_header=True, header_style="dim white")
         table.add_column("No", style="bold cyan", width=4, no_wrap=True)
         table.add_column("PACKAGE NAME", style="white", width=25, no_wrap=True)
@@ -54,7 +54,9 @@ def show_auto_login_menu():
         console.print(table)
         draw_footer("[1,2,3..] Pilih ID Package   |   [0] Kembali ke Menu")
         
-        choice = console.input("\n[dim]Select Package (0 untuk keluar):[/] ").strip()
+        choice = safe_console_input("\n[dim]Select Package (0 untuk keluar):[/] ")
+        if choice == "RESIZE_EVENT": continue
+        choice = choice.strip()
         
         if choice == '0':
             break
@@ -64,13 +66,17 @@ def show_auto_login_menu():
                 selected_pkg = all_packages[idx-1]
                 
                 console.print(f"\n[bold cyan]Konfigurasi Auto Login: {selected_pkg}[/]")
-                username = console.input("[white]Username:[/] ").strip()
+                username = safe_console_input("[white]Username:[/] ")
+                if username == "RESIZE_EVENT": continue
+                username = username.strip()
+                
                 if not username:
                     console.print("[red]Dibatalkan.[/]")
                     time.sleep(1)
                     continue
                     
-                password = Prompt.ask("[white]Password[/]", password=True)
+                password = safe_prompt_ask("[white]Password[/]", password=True)
+                if password == "RESIZE_EVENT": continue
                 
                 if selected_pkg not in accounts:
                     accounts[selected_pkg] = {}
@@ -80,8 +86,9 @@ def show_auto_login_menu():
                 save_accounts(accounts)
                 
                 console.print("\n[bold green]Saved Successfully.[/]")
-                again = console.input("\n[dim]Configure another package? [Y/N]:[/] ").strip().upper()
-                if again != 'Y':
+                again = safe_console_input("\n[dim]Configure another package? [Y/N]:[/] ")
+                if again == "RESIZE_EVENT": continue
+                if again.strip().upper() != 'Y':
                     break
             else:
                 console.print("[bold red][!] ID tidak valid.[/]")
@@ -91,14 +98,13 @@ def show_link_manager(config_data):
     all_packages = get_roblox_packages()
     if not all_packages:
         console.print("\n[bold red][!] Tidak ada package Roblox terdeteksi.[/]")
-        console.input("\n[dim]Tekan Enter untuk kembali...[/]")
+        safe_console_input("\n[dim]Tekan Enter untuk kembali...[/]")
         return
 
     while True:
         reset_terminal()
         draw_header("LINK PER PACKAGE")
         
-        # BUG FIX: Menghapus width absolut agar responsif
         table = Table(box=None, padding=(0, 0), show_header=True, header_style="dim white")
         table.add_column("ID", style="bold cyan", width=4, no_wrap=True)
         table.add_column("PACKAGE NAME", style="white", width=20, no_wrap=True)
@@ -113,7 +119,9 @@ def show_link_manager(config_data):
         console.print(table)
         draw_footer("[1,2,3..] Pilih ID untuk edit   |   [0] Kembali")
         
-        choice = console.input("\n[dim]Pilih ID (0 untuk keluar):[/] ").strip()
+        choice = safe_console_input("\n[dim]Pilih ID (0 untuk keluar):[/] ")
+        if choice == "RESIZE_EVENT": continue
+        choice = choice.strip()
         
         if choice == '0':
             break
@@ -123,7 +131,9 @@ def show_link_manager(config_data):
                 selected_pkg = all_packages[idx-1]
                 pkg_key = f"PKG_{selected_pkg}"
                 console.print(f"\n[dim]Kosongkan lalu Enter untuk menggunakan Global Link.[/]")
-                new_link = console.input(f"[dim]Link baru untuk [white]{selected_pkg}[/]:[/] ")
+                
+                new_link = safe_console_input(f"[dim]Link baru untuk [white]{selected_pkg}[/]:[/] ")
+                if new_link == "RESIZE_EVENT": continue
                 
                 if new_link.strip():
                     config_data[pkg_key] = new_link.strip()
@@ -149,7 +159,7 @@ def run_auto_rejoiner():
     all_packages = get_roblox_packages()
     if not all_packages:
         console.print("\n[bold red][!] Tidak ada package Roblox terdeteksi.[/]")
-        console.input("\n[dim]Tekan Enter untuk kembali...[/]")
+        safe_console_input("\n[dim]Tekan Enter untuk kembali...[/]")
         return
         
     console.print("\n[bold cyan]Detected Packages:[/]")
@@ -159,7 +169,18 @@ def run_auto_rejoiner():
     
     packages = []
     while True:
-        choice = console.input("\n[dim]Input (A / 1,2,3...):[/] ").strip().upper()
+        choice = safe_console_input("\n[dim]Input (A / 1,2,3...):[/] ")
+        if choice == "RESIZE_EVENT":
+            reset_terminal()
+            draw_header("INITIALIZING AUTO REJOINER")
+            console.print("\n[bold cyan]Detected Packages:[/]")
+            for idx, pkg in enumerate(all_packages, 1):
+                console.print(f"[{idx}] {pkg}")
+            console.print("\n[bold cyan][A][/] All Packages")
+            continue
+            
+        choice = choice.strip().upper()
+        
         if choice == '':
             console.print("[bold red][!] Input tidak boleh kosong. Silakan coba lagi.[/]")
             continue
@@ -280,7 +301,6 @@ def show_settings():
         link = config_data.get('PRIVATE_SERVER_LINK', '')
         display_link = link[:25] + "..." if len(link) > 25 else link
         
-        # BUG FIX: Menghapus width absolut agar responsif
         table = Table(box=None, padding=(0, 0), show_header=False)
         table.add_column("No", style="bold cyan", width=5, no_wrap=True)
         table.add_column("Icon", style="white", width=3, no_wrap=True)
@@ -299,36 +319,37 @@ def show_settings():
         console.print(table)
         draw_footer("ESC / 8  Back to Menu")
         
-        choice = Prompt.ask("\n[dim]Pilih (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
+        choice = safe_prompt_ask("\n[dim]Pilih (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
+        if choice == "RESIZE_EVENT": continue
         
         if choice == '1':
-            new_link = console.input("\n[dim]Masukkan Server Link baru:[/] ")
-            if new_link.strip(): 
+            new_link = safe_console_input("\n[dim]Masukkan Server Link baru:[/] ")
+            if new_link != "RESIZE_EVENT" and new_link.strip(): 
                 config_data['PRIVATE_SERVER_LINK'] = new_link.strip()
                 save_config(config_data, "config.conf")
         elif choice == '2':
-            new_timeout = console.input("\n[dim]Masukkan Timeout (detik):[/] ")
-            if new_timeout.isdigit(): 
+            new_timeout = safe_console_input("\n[dim]Masukkan Timeout (detik):[/] ")
+            if new_timeout != "RESIZE_EVENT" and new_timeout.isdigit(): 
                 config_data['TIMEOUT_SECONDS'] = int(new_timeout)
                 save_config(config_data, "config.conf")
         elif choice == '3':
-            new_delay = console.input("\n[dim]Masukkan Delay (detik):[/] ")
-            if new_delay.isdigit(): 
+            new_delay = safe_console_input("\n[dim]Masukkan Delay (detik):[/] ")
+            if new_delay != "RESIZE_EVENT" and new_delay.isdigit(): 
                 config_data['DELAY_SECONDS'] = int(new_delay)
                 save_config(config_data, "config.conf")
         elif choice == '4':
-            new_retries = console.input("\n[dim]Masukkan Max Retries:[/] ")
-            if new_retries.isdigit(): 
+            new_retries = safe_console_input("\n[dim]Masukkan Max Retries:[/] ")
+            if new_retries != "RESIZE_EVENT" and new_retries.isdigit(): 
                 config_data['MAX_RETRIES'] = int(new_retries)
                 save_config(config_data, "config.conf")
         elif choice == '5':
-            new_cooldown = console.input("\n[dim]Masukkan Cooldown (detik):[/] ")
-            if new_cooldown.isdigit(): 
+            new_cooldown = safe_console_input("\n[dim]Masukkan Cooldown (detik):[/] ")
+            if new_cooldown != "RESIZE_EVENT" and new_cooldown.isdigit(): 
                 config_data['COOLDOWN_SECONDS'] = int(new_cooldown)
                 save_config(config_data, "config.conf")
         elif choice == '6':
-            new_cache = console.input("\n[dim]Masukkan Interval Clear Cache (menit, 0 untuk nonaktif):[/] ")
-            if new_cache.isdigit(): 
+            new_cache = safe_console_input("\n[dim]Masukkan Interval Clear Cache (menit, 0 untuk nonaktif):[/] ")
+            if new_cache != "RESIZE_EVENT" and new_cache.isdigit(): 
                 config_data['CLEAR_CACHE_MINUTES'] = int(new_cache)
                 save_config(config_data, "config.conf")
         elif choice == '7':
@@ -356,7 +377,7 @@ def run_updater():
         if info.reason:
             console.print(f"[dim white]Detail: {info.reason}[/]")
         draw_footer("Enter  Kembali ke Menu")
-        console.input("\n[dim]Tekan Enter...[/]")
+        safe_console_input("\n[dim]Tekan Enter...[/]")
         return
         
     console.print("\n[bold green]🌟 UPDATE TERSEDIA 🌟[/]")
@@ -368,7 +389,8 @@ def run_updater():
     table.add_row("Versi Terbaru", f"[green]{info.latest_version}[/]")
     console.print(table)
     
-    choice = Prompt.ask("\n[white]Mau update sekarang?[/]", choices=["Y", "N"], default="N")
+    choice = safe_prompt_ask("\n[white]Mau update sekarang?[/]", choices=["Y", "N"])
+    if choice == "RESIZE_EVENT": return # Jika terminal di-resize, kembalikan ke menu utama untuk keamanan
     
     if choice.upper() == 'Y':
         console.print("\n[dim cyan]Downloading update secara silent...[/]")
@@ -385,7 +407,7 @@ def run_updater():
             console.print(f"[dim white]Kode Error : {result.error_code.name}[/]")
             console.print(f"[dim white]Alasan     : {result.reason}[/]")
             draw_footer("Enter  Kembali ke Menu")
-            console.input("\n[dim]Tekan Enter...[/]")
+            safe_console_input("\n[dim]Tekan Enter...[/]")
     else:
         console.print("\n[dim yellow]Update dibatalkan oleh user.[/]")
         time.sleep(1)
@@ -395,7 +417,6 @@ def show_main_menu():
         reset_terminal()
         draw_header("MENU UTAMA")
         
-        # BUG FIX: Menghapus width absolut agar responsif
         table = Table(box=None, padding=(0, 0), show_header=False)
         table.add_column("No", style="bold cyan", width=5, no_wrap=True)
         table.add_column("Icon", style="white", width=3, no_wrap=True)
@@ -414,7 +435,11 @@ def show_main_menu():
         console.print(table)
         draw_footer("CTRL+C  Dashboard    CTRL+Z  Exit")
         
-        choice = Prompt.ask("\n[dim]Pilih menu (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
+        choice = safe_prompt_ask("\n[dim]Pilih menu (1-8)[/]", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
+        
+        # BUG FIX: Deteksi event resize, ulangi loop untuk render ulang layar
+        if choice == "RESIZE_EVENT": 
+            continue
         
         if choice == '1':
             show_transition("Starting Engine...")
@@ -442,7 +467,7 @@ def show_main_menu():
                 console.print("[dim]File log belum tersedia.[/]")
             
             draw_footer("Enter  Back to Menu")
-            console.input("\n[dim]Tekan Enter...[/]")
+            safe_console_input("\n[dim]Tekan Enter...[/]")
         elif choice == '6':
             show_transition("Opening About...")
             reset_terminal()
@@ -459,7 +484,7 @@ def show_main_menu():
             
             console.print(table)
             draw_footer("Enter  Back to Menu")
-            console.input("\n[dim]Tekan Enter...[/]")
+            safe_console_input("\n[dim]Tekan Enter...[/]")
         elif choice == '7':
             show_transition("Checking Server...")
             run_updater()
@@ -471,4 +496,3 @@ def show_main_menu():
                 pass
             reset_terminal()
             sys.exit(0)
-            
