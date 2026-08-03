@@ -104,12 +104,10 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
 
 def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids):
     try:
-        # --- DATASTORE LOCK COOLDOWN ---
         # Memberikan waktu independen 15 detik bagi server Roblox 
         # untuk melepas sesi lama sebelum menghidupkan clone kembali.
         log.info(f"RECOVERY: Menunggu 15 detik untuk {pkg} agar server Roblox melepas data...")
         time.sleep(15)
-        # -------------------------------
 
         clean_package_cache(pkg)
         stats[pkg]['status'] = 'LOADING'
@@ -199,7 +197,9 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
     set_console_logging(False)
 
     try:
-        with Live(draw_dashboard(stats, current_time, pkg_count, include_header=True), console=console, refresh_per_second=1, transient=False, screen=True) as live:
+        # BUG FIX: screen=False membuat dashboard dicetak inline ke standard history buffer.
+        # Menghapus sifat volatile dari Alternate Screen.
+        with Live(draw_dashboard(stats, current_time, pkg_count, include_header=True), console=console, refresh_per_second=1, transient=False, screen=False) as live:
             try:
                 while True:
                     current_time = time.time()
@@ -269,4 +269,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-              
+      
