@@ -1,18 +1,10 @@
 """
 Modul : error_detector.py
-
-Phase 1.1
-
 Tanggung Jawab:
-- Menjalankan SATU daemon logcat
-- Hanya membaca tag Roblox
-- Hanya membaca FLog::Network
-- Mengambil PID
-- Mengambil Reason
-- Debounce event agar tidak spam
-- Mengirim event ke Queue
-- Tidak menyentuh stats
-- Tidak melakukan recovery
+- Menjalankan daemon pembacaan logcat (hanya membaca Roblox FLog::Network).
+- Mengambil PID dan Reason yang relevan.
+- Melakukan Debounce agar tidak spam Queue.
+- Mengirim event ke antrean secara murni (tanpa menyentuh stats/recovery).
 """
 
 import subprocess
@@ -61,7 +53,6 @@ class ErrorDetector:
         self._thread = None
 
     def start(self):
-
         if self._running:
             return
 
@@ -72,14 +63,12 @@ class ErrorDetector:
             daemon=True,
             name="RobloxErrorDetector"
         )
-
         self._thread.start()
 
     def stop(self):
         self._running = False
 
     def _worker(self):
-
         cmd = [
             "su",
             "-c",
@@ -87,9 +76,7 @@ class ErrorDetector:
         ]
 
         while self._running:
-
             try:
-
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
@@ -102,7 +89,6 @@ class ErrorDetector:
                 )
 
                 while self._running:
-
                     line = process.stdout.readline()
 
                     if not line:
@@ -112,22 +98,18 @@ class ErrorDetector:
                         continue
 
                     pid_match = PID_PATTERN.search(line)
-
                     if not pid_match:
                         continue
 
                     reason_match = REASON_PATTERN.search(line)
-
                     if not reason_match:
                         continue
 
                     pid = pid_match.group(1)
-
                     now = time.time()
-
                     last = _last_event.get(pid, 0)
 
-                    # Abaikan event PID yang sama selama 5 detik
+                    # Abaikan event PID yang sama selama debounce time
                     if now - last < DEBOUNCE_SECONDS:
                         continue
 
@@ -158,19 +140,15 @@ _detector = ErrorDetector()
 def start_error_detector():
     _detector.start()
 
-
 def stop_error_detector():
     _detector.stop()
-
 
 def has_event():
     return not _event_queue.empty()
 
-
 def get_event():
-
     try:
         return _event_queue.get_nowait()
-
     except queue.Empty:
         return None
+        
