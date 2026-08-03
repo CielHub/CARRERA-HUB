@@ -42,12 +42,7 @@ def wait_until_process_dead(pid, timeout=5.0):
 def graceful_kill(pid, package=None):
 
     if not pid:
-        return True
-
-    # ====================================================
-    # STEP 1
-    # SIGTERM
-    # ====================================================
+        return False
 
     subprocess.run(
         ["su", "-c", f"kill -15 {pid}"],
@@ -55,12 +50,12 @@ def graceful_kill(pid, package=None):
         stderr=subprocess.DEVNULL,
     )
 
-    for _ in range(10):
-
+    for _ in range(35):      # tunggu sampai 5 detik
         if not pid_exists(pid):
             return True
-
         time.sleep(0.2)
+
+    return False
 
     # ====================================================
     # STEP 2
