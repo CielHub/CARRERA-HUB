@@ -1,7 +1,7 @@
 """
 Modul: monitor.py
 Tanggung Jawab: Memantau status proses (PID), Dashboard Real-time, memicu Recovery Pintar, 
-                dan memastikan stabilitas secara Non-Blocking.
+                dan mengelola deteksi Error In-Game secara Non-Blocking.
 """
 import os
 import subprocess
@@ -18,6 +18,7 @@ from core.logger import log, set_console_logging
 from core.launcher import launch_and_wait
 from core.ui import console, reset_terminal
 from core.cache_cleaner import clean_package_cache
+from core.error_detector import start_error_detector
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
@@ -38,21 +39,6 @@ def format_uptime(start_time, current_time):
     h, rem = divmod(elapsed, 3600)
     m, s = divmod(rem, 60)
     return f"{h:02d}:{m:02d}:{s:02d}"
-
-def draw_static_header(pkg_count):
-    global _CACHED_HEADER_ART
-    if _CACHED_HEADER_ART is None:
-        try:
-            ascii_art = pyfiglet.figlet_format("CARRERA", font="slant")
-            lines = [f"[bold green]{line}[/]" for line in ascii_art.split('\n') if line.strip()]
-            _CACHED_HEADER_ART = "\n".join(lines)
-        except Exception:
-            _CACHED_HEADER_ART = "[bold green]CARRERA[/]"
-            
-    console.print(Text.from_markup(_CACHED_HEADER_ART))
-    info_text = f"Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}"
-    console.print(f"[dim white]{info_text}[/]")
-    console.print(f"[dim cyan]{'─' * 60}[/]")
 
 def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     renderables = []
@@ -118,9 +104,7 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
 
 def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids):
     try:
-        # --- PEMBERSIHAN CACHE AMAN SEBELUM RECOVERY ---
         clean_package_cache(pkg)
-        # -----------------------------------------------
 
         success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
         
@@ -132,19 +116,12 @@ def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_da
                 login_status = run_autologin(pkg)
                 
                 if login_status in ["SUCCESS", "ALREADY_LOGGED_IN"]:
-                    if login_status == "ALREADY_LOGGED_IN":
-                        log.info(f"AUTO LOGIN: {pkg} sudah login. Melanjutkan Join Private Server...")
-                    else:
-                        log.info(f"AUTO LOGIN SUCCESS: Berhasil masuk ke Home. Melanjutkan Join Private Server untuk {pkg}...")
-                        
                     stats[pkg]['status'] = 'LOADING'
                     success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
                 elif login_status == "CAPTCHA":
-                    log.warning(f"AUTO LOGIN CAPTCHA: Terdeteksi Captcha untuk {pkg}.")
                     stats[pkg]['status'] = 'CAPTCHA'
                     return
                 else:
-                    log.warning(f"AUTO LOGIN {login_status}: Gagal memproses login untuk {pkg}.")
                     stats[pkg]['status'] = 'LOGIN FAILED'
                     return
             except ImportError:
@@ -160,7 +137,6 @@ def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_da
             stats[pkg]['status'] = 'ONLINE'
             stats[pkg]['uptime_start'] = current_time
             stats[pkg]['last_recovery_time'] = current_time
-            log.info(f"RECOVERY SUCCESS: PID baru dicatat untuk {pkg}.")
             
             if config_data and config_data.get('GRID_ENABLED'):
                 try:
@@ -177,14 +153,13 @@ def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_da
                     pass
         else:
             if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
-                log.error(f"RECOVERY FAILED: {pkg} gagal dihidupkan.")
                 stats[pkg]['status'] = 'FAILED'
     except Exception as e:
-        log.error(f"RECOVERY FATAL: Exception pada background thread {pkg}: {str(e)}")
+        log.error(f"RECOVERY FATAL: {str(e)}")
         stats[pkg]['status'] = 'FAILED'
 
 def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None, config_data=None):
-    log.info("MONITORING: Semua package diproses. Memasuki mode penjagaan...")
+    log.info("MONITORING: Memasuki mode penjagaan (Watchdog & Error Detector)...")
     time.sleep(1)
 
     current_time = time.time()
@@ -194,14 +169,24 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
         stats = {pkg: {
             'pid': '-', 'status': 'ONLINE', 'uptime_start': current_time, 
             'launch_count': 1, 'recovery_count': 0, 'crash_count': 0,
-            'consecutive_crashes': 0, 'last_recovery_time': current_time, 'cooldown_until': 0
+            'consecutive_crashes': 0, 'last_recovery_time': current_time, 'cooldown_until': 0,
+            'has_error': False
         } for pkg in packages}
+    else:
+        # Backward compatibility jika dipanggil dari file menu.py lama
+        for pkg in packages:
+            if 'has_error' not in stats[pkg]:
+                stats[pkg]['has_error'] = False
 
     tracked_pids = {}
     for pkg in packages:
         pid = get_pid(pkg)
         tracked_pids[pkg] = pid
         stats[pkg]['pid'] = pid if pid else '-'
+
+    # --- MEMULAI ERROR DETECTOR ---
+    start_error_detector(stats)
+    # ------------------------------
 
     check_interval = 15
     last_check_time = current_time
@@ -227,12 +212,28 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 
                             current_pid = get_pid(pkg)
                             
+                            # --- CEK INTERSEPT ERROR IN-GAME SEBELUM CEK CRASH OS ---
+                            if stats[pkg].get('has_error'):
+                                os.system(f"su -c 'am force-stop {pkg}'")
+                                stats[pkg]['has_error'] = False
+                                stats[pkg]['status'] = 'RECOVERY'
+                                stats[pkg]['pid'] = '-'
+                                tracked_pids[pkg] = ''
+                                
+                                pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
+                                threading.Thread(
+                                    target=recovery_worker,
+                                    args=(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids),
+                                    daemon=True
+                                ).start()
+                                continue
+                            # --------------------------------------------------------
+
                             if not current_pid or current_pid != tracked_pids[pkg]:
                                 stats[pkg]['crash_count'] += 1
                                 stats[pkg]['consecutive_crashes'] += 1
                                 
                                 if stats[pkg]['consecutive_crashes'] > max_retries:
-                                    log.error(f"COOLDOWN: {pkg} crash {max_retries} kali berturut-turut! Cooldown {cooldown_secs} detik.")
                                     stats[pkg]['cooldown_until'] = current_time + cooldown_secs
                                     stats[pkg]['status'] = 'COOLDOWN'
                                     stats[pkg]['pid'] = '-'
@@ -241,11 +242,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 stats[pkg]['status'] = 'RECOVERY'
                                 stats[pkg]['pid'] = '-'
                                 
-                                log.error(f"CRASH DETECTED: {pkg} terhenti!")
-                                log.info(f"RECOVERY: Memicu thread pemulihan {stats[pkg]['consecutive_crashes']}/{max_retries} untuk {pkg}...")
-                                
                                 pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
-                                
                                 threading.Thread(
                                     target=recovery_worker,
                                     args=(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids),
@@ -259,7 +256,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                     
                                 if stats[pkg]['consecutive_crashes'] > 0:
                                     if current_time - stats[pkg]['last_recovery_time'] > STABILITY_THRESHOLD:
-                                        log.info(f"STABILITY ACHIEVED: {pkg} stabil selama 5 menit. Reset counter crash.")
                                         stats[pkg]['consecutive_crashes'] = 0
                         
                         last_check_time = current_time
@@ -271,4 +267,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-      
+                    
