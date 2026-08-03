@@ -60,8 +60,9 @@ def _logcat_daemon():
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
+            errors="ignore",
             bufsize=1,
-            universal_newlines=True,
         )
 
     except Exception:
