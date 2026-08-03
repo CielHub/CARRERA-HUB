@@ -198,7 +198,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
 
     try:
         # BUG FIX: screen=False membuat dashboard dicetak inline ke standard history buffer.
-        # Menghapus sifat volatile dari Alternate Screen.
         with Live(draw_dashboard(stats, current_time, pkg_count, include_header=True), console=console, refresh_per_second=1, transient=False, screen=False) as live:
             try:
                 while True:
@@ -217,19 +216,26 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                             current_pid = get_pid(pkg)
                             
                             if stats[pkg].get('has_error'):
-                                os.system(f"su -c 'am force-stop {pkg}'")
-                                stats[pkg]['has_error'] = False
-                                stats[pkg]['status'] = 'RECOVERY'
-                                stats[pkg]['pid'] = '-'
-                                tracked_pids[pkg] = ''
+                                # ==========================================
+                                # DEBUG MODE: AUTO RECOVERY DINONAKTIFKAN
+                                # ==========================================
+                                # os.system(f"su -c 'am force-stop {pkg}'")
+                                # stats[pkg]['status'] = 'RECOVERY'
+                                # stats[pkg]['pid'] = '-'
+                                # tracked_pids[pkg] = ''
+                                # 
+                                # pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
+                                # threading.Thread(
+                                #     target=recovery_worker,
+                                #     args=(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids),
+                                #     daemon=True
+                                # ).start()
                                 
-                                pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
-                                threading.Thread(
-                                    target=recovery_worker,
-                                    args=(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids),
-                                    daemon=True
-                                ).start()
+                                # Cukup reset flag-nya saja agar tidak diproses berulang-ulang
+                                # Game akan dibiarkan berjalan normal (farming lanjut).
+                                stats[pkg]['has_error'] = False
                                 continue
+                                # ==========================================
 
                             if not current_pid or current_pid != tracked_pids[pkg]:
                                 stats[pkg]['crash_count'] += 1
@@ -269,4 +275,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-      
+                  
