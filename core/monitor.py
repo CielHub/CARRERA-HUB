@@ -19,7 +19,11 @@ from core.logger import log, set_console_logging
 from core.launcher import launch_and_wait
 from core.ui import console, reset_terminal
 from core.cache_cleaner import clean_package_cache
-from core.error_detector import start_error_detector
+from core.error_detector import (
+    start_error_detector,
+    has_event,
+    get_event,
+)
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
@@ -196,7 +200,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
         stats[pkg]['pid'] = pid if pid else '-'
 
     # ERROR DETECTOR AKTIF: Mode Periodic Snapshot
-    start_error_detector(stats)
+    start_error_detector()
 
     check_interval = 15
     last_check_time = current_time
@@ -209,7 +213,19 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
             try:
                 while True:
                     current_time = time.time()
-                    
+                    while has_event():
+                        event = get_event()
+                        if event is None:
+                            break
+
+                        pid = event["pid"]
+
+                        for pkg in packages:
+                            if stats[pkg]["pid"] == pid and
+                               stats[pkg]["status"] == "ONLINE":
+                               stats[pkg]["has_error"] = True
+                               break
+          
                     if current_time - last_check_time >= check_interval:
                         for pkg in packages:
                             if stats[pkg]['status'] in ['RECOVERY', 'LOGIN', 'LOADING', 'CAPTCHA']:
