@@ -24,6 +24,7 @@ from core.error_detector import (
     has_event,
     get_event,
 )
+from core.process_manager import graceful_kill
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
