@@ -197,7 +197,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
         tracked_pids[pkg] = pid
         stats[pkg]['pid'] = pid if pid else '-'
 
-    start_error_detector(stats)
+  #  start_error_detector(stats)
 
     check_interval = 15
     last_check_time = current_time
