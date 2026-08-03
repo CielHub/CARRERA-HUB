@@ -16,12 +16,12 @@ from rich.console import Console
 from rich.text import Text
 
 console = Console()
-LAYOUT_WIDTH = 60
+LAYOUT_WIDTH = 60 # Dipertahankan sebagai fallback/kompatibilitas untuk modul lama
 
 def reset_terminal():
     """Membersihkan layar terminal secara aman tanpa merusak history (scrollback)."""
-    # BUG FIX: Menghapus \033c dan \033[3J yang merusak fungsi zoom Termux
-    os.system('clear' if os.name == 'posix' else 'cls')
+    # BUG FIX: Menggunakan fitur native dari rich console yang kompatibel dengan Termux OS
+    console.clear()
 
 def get_compact_header(title="CARRERA-HUB v1.0", user="root", pkg_count="-", status="Active"):
     """DIPERTAHANKAN KHUSUS UNTUK DASHBOARD."""
@@ -37,22 +37,28 @@ def get_compact_header(title="CARRERA-HUB v1.0", user="root", pkg_count="-", sta
     return header_text
 
 def draw_header(subtitle="MENU"):
-    """Membangun Header Rata Kiri dengan desain padat (Compact) untuk layar kecil."""
-    # 1. Logo Pyfiglet (Menggunakan font 'small' untuk menghemat ruang vertikal)
-    try:
-        ascii_art = pyfiglet.figlet_format("CARRERA", font="small")
-    except Exception:
-        ascii_art = pyfiglet.figlet_format("CARRERA") # Fallback aman
-        
-    for line in ascii_art.split('\n'):
-        if line.strip():
-            console.print(f"[bold green]{line}[/]")
+    """Membangun Header responsif yang mendeteksi ukuran kolom Terminal secara dinamis."""
+    current_width = console.width
     
-    # 2. Info Bar Padat (Menggabungkan Subtitle dan Info agar tidak boros baris)
+    # 1. Fallback cerdas untuk layar sempit (Zoom in maksimal)
+    if current_width < 45:
+        console.print("[bold green]CARRERA-HUB[/]")
+    else:
+        try:
+            ascii_art = pyfiglet.figlet_format("CARRERA", font="small")
+        except Exception:
+            ascii_art = pyfiglet.figlet_format("CARRERA")
+            
+        for line in ascii_art.split('\n'):
+            if line.strip():
+                console.print(f"[bold green]{line}[/]")
+    
+    # 2. Info Bar Padat
     console.print(f"[bold cyan]{subtitle}[/] [dim white]| Version 1.0.0 | User root[/]")
     
-    # 3. Garis Pemisah Tipis
-    console.print("[dim cyan]" + "─" * LAYOUT_WIDTH + "[/]")
+    # 3. Garis Pemisah Dinamis
+    line_width = min(current_width, 60)
+    console.print("[dim cyan]" + "─" * line_width + "[/]")
 
 def show_transition(message="Loading..."):
     """Menampilkan transisi spinner modern sebelum berpindah halaman."""
@@ -62,5 +68,5 @@ def show_transition(message="Loading..."):
 
 def draw_footer(text="CTRL+C  Dashboard    CTRL+Z  Exit"):
     """Mencetak Footer minimalis di bagian bawah (Rata Kiri)."""
-    console.print(f"\n[dim white]{text}[/]") # Menggabungkan enter dan teks ke satu baris
-
+    console.print(f"\n[dim white]{text}[/]")
+    
