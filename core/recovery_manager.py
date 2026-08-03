@@ -1,20 +1,24 @@
 """
 Modul : recovery_manager.py
 Tanggung Jawab:
-- Menjalankan thread Recovery Manager secara independen.
-- Menerima event dari Error Detector.
+- Mengatur keseluruhan alur recovery Error267 (GLOBAL MODE) dan Crash (SINGLE MODE).
 - Mengeksekusi kill pada target.
-- Mengatur keseluruhan alur recovery Error267 dan Watchdog.
+- Pause Watchdog saat Global Recovery aktif.
 """
 
 import threading
 import time
+from enum import Enum
 
 from core.error_detector import has_event, get_event
 from core.process_manager import graceful_kill, get_pid
 from core.cache_cleaner import clean_package_cache
 from core.launcher import launch_and_wait
 from core.logger import log
+
+class RecoveryMode(Enum):
+    SINGLE = 0
+    GLOBAL = 1
 
 class RecoveryManager:
 
@@ -28,6 +32,12 @@ class RecoveryManager:
         self.intent_url = None
         self.timeout_seconds = 60
         self.config_data = {}
+        
+        self.recovery_mode = RecoveryMode.SINGLE
+        self.global_recovery = False
+        
+        self.global_status = None
+        self.global_countdown = 0
 
     def configure(self, packages, stats, tracked_pids, intent_url, timeout_seconds, config_data):
         self.packages = packages
@@ -35,7 +45,7 @@ class RecoveryManager:
         self.tracked_pids = tracked_pids
         self.intent_url = intent_url
         self.timeout_seconds = timeout_seconds
-        self.config_data = config_data
+        self.config_data = config_data if config_data else {}
 
     def start(self):
         if self._running:
@@ -52,6 +62,62 @@ class RecoveryManager:
     def stop(self):
         self._running = False
 
+    def enter_global_recovery(self):
+        self.recovery_mode = RecoveryMode.GLOBAL
+        self.global_recovery = True
+
+    def exit_global_recovery(self):
+        self.recovery_mode = RecoveryMode.SINGLE
+        self.global_recovery = False
+
+    def is_global_recovery(self):
+        return self.global_recovery
+
+    def watchdog_paused(self):
+        return self.global_recovery
+
+    def kill_all_packages(self):
+        for pkg in self.packages:
+            pid = self.stats[pkg]["pid"]
+
+            if not pid or pid == "-":
+                continue
+
+            graceful_kill(pid, pkg)
+
+            self.stats[pkg]["status"] = "RECOVERY"
+            self.stats[pkg]["pid"] = "-"
+            self.tracked_pids[pkg] = ""
+
+    def wait_all_dead(self, timeout=15):
+        start = time.time()
+        while time.time() - start < timeout:
+            all_dead = True
+            for pkg in self.packages:
+                pid = self.stats[pkg]["pid"]
+                if pid and pid != "-":
+                    all_dead = False
+                    break
+            
+            if all_dead:
+                return True
+                
+            time.sleep(0.2)
+            
+        return False
+
+    def global_delay(self, delay_seconds):
+        self.global_status = "WAITING"
+        for sec in range(delay_seconds, 0, -1):
+            self.global_countdown = sec
+            time.sleep(1)
+            
+        self.global_status = None
+        self.global_countdown = 0
+
+    def get_global_state(self):
+        return self.global_status, self.global_countdown
+
     def _worker(self):
         while self._running:
             while has_event():
@@ -59,41 +125,46 @@ class RecoveryManager:
                 
                 if event is None:
                     break
-
-                pid = event["pid"]
-
-                for pkg in self.packages:
-                    if self.stats[pkg]["pid"] != pid:
+                
+                reason = event.get("reason")
+                pid = event.get("pid")
+                
+                # Cek jika error global (Misal: 267)
+                if reason in (266, 267, 277, 279, 280):
+                    is_enabled = self.config_data.get("GLOBAL_RECOVERY_ENABLED", True)
+                    if not is_enabled:
                         continue
-
-                    # Jangan proses dua kali
-                    if self.stats[pkg]["status"] == "RECOVERY":
-                        break
-
-                    success = graceful_kill(pid, pkg)
-
-                    if not success:
-                        break
-
-                    self.stats[pkg]["status"] = "RECOVERY"
-                    self.stats[pkg]["pid"] = "-"
-                    self.tracked_pids[pkg] = ""
-
-                    threading.Thread(
-                        target=self.recovery_worker,
-                        args=(pkg,),
-                        daemon=True
-                    ).start()
-
-                    break
+                        
+                    log.info(f"[GLOBAL] Error {reason} detected on PID {pid}. Initiating Global Recovery.")
+                    self.enter_global_recovery()
+                    log.info("[GLOBAL] Pausing watchdog.")
+                    
+                    log.info(f"[GLOBAL] Killing {len(self.packages)} packages...")
+                    self.kill_all_packages()
+                    
+                    if not self.wait_all_dead():
+                        log.warning("[GLOBAL] Some packages did not die gracefully. Proceeding anyway.")
+                        
+                    delay = self.config_data.get("GLOBAL_RECOVERY_DELAY", 30)
+                    log.info(f"[GLOBAL] Waiting {delay} seconds...")
+                    self.global_delay(delay)
+                    
+                    log.info("[GLOBAL] Launching all packages...")
+                    self.launch_all_packages()
+                    
+                    log.info("[GLOBAL] Recovery completed. Resuming watchdog.")
+                    self.exit_global_recovery()
+                    continue
 
             time.sleep(0.1)
 
-    def recovery_worker(self, pkg):
-        try:
-            log.info(f"RECOVERY: Menunggu 15 detik untuk {pkg} agar server Roblox melepas data...")
-            time.sleep(15)
+    def launch_all_packages(self):
+        for pkg in self.packages:
+            self.launch_single_package(pkg)
 
+    def launch_single_package(self, pkg):
+        try:
+            log.info(f"LAUNCH: Memulai {pkg} tanpa delay tambahan...")
             clean_package_cache(pkg)
             self.stats[pkg]['status'] = 'LOADING'
             
@@ -129,6 +200,7 @@ class RecoveryManager:
                 self.stats[pkg]['status'] = 'ONLINE'
                 self.stats[pkg]['uptime_start'] = current_time
                 self.stats[pkg]['last_recovery_time'] = current_time
+                self.stats[pkg]['consecutive_crashes'] = 0
                 
                 if self.config_data and self.config_data.get('GRID_ENABLED'):
                     try:
@@ -147,7 +219,17 @@ class RecoveryManager:
                 if self.stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
                     self.stats[pkg]['status'] = 'FAILED'
         except Exception as e:
-            log.error(f"RECOVERY FATAL: {str(e)}")
+            log.error(f"LAUNCH FATAL: {str(e)}")
+            self.stats[pkg]['status'] = 'FAILED'
+
+    def single_recovery_worker(self, pkg):
+        """Hanya dipanggil oleh Watchdog saat mendeteksi crash tunggal (PID hilang)"""
+        try:
+            log.info(f"[SINGLE] Crash detected for {pkg}. Waiting 15 seconds...")
+            time.sleep(15)
+            self.launch_single_package(pkg)
+        except Exception as e:
+            log.error(f"SINGLE RECOVERY FATAL: {str(e)}")
             self.stats[pkg]['status'] = 'FAILED'
 
 _manager = RecoveryManager()
@@ -160,9 +242,16 @@ def stop_recovery_manager():
     _manager.stop()
 
 def trigger_recovery(pkg):
+    """Memicu recovery tunggal (SINGLE MODE) via Thread independen."""
     threading.Thread(
-        target=_manager.recovery_worker,
+        target=_manager.single_recovery_worker,
         args=(pkg,),
         daemon=True
     ).start()
-            
+
+def is_global_recovery():
+    return _manager.watchdog_paused()
+
+def get_global_state():
+    return _manager.get_global_state()
+                
