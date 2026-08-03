@@ -1,7 +1,7 @@
 """
 Modul: monitor.py
 Tanggung Jawab: Memantau status proses, Dashboard Real-time (Responsive), 
-                dan memicu Watchdog Recovery.
+                dan memicu Watchdog Recovery (Hanya untuk Crash/Single Recovery).
 """
 import os
 import time
@@ -16,7 +16,7 @@ except ImportError:
 from core.logger import log, set_console_logging
 from core.ui import console, reset_terminal
 from core.error_detector import start_error_detector
-from core.recovery_manager import start_recovery_manager, trigger_recovery
+from core.recovery_manager import start_recovery_manager, trigger_recovery, is_global_recovery
 from core.process_manager import get_pid
 from rich.live import Live
 from rich.table import Table
@@ -139,6 +139,11 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                     
                     # Watchdog Check
                     if current_time - last_check_time >= check_interval:
+                        
+                        if is_global_recovery():
+                            last_check_time = current_time
+                            continue
+
                         for pkg in packages:
                             if stats[pkg]['status'] in ['RECOVERY', 'LOGIN', 'LOADING', 'CAPTCHA']:
                                 continue
@@ -164,7 +169,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 stats[pkg]['pid'] = '-'
                                 tracked_pids[pkg] = ''
                                 
-                                # Panggil Watchdog Recovery via RecoveryManager
+                                # Panggil Watchdog Recovery via RecoveryManager (SINGLE MODE)
                                 trigger_recovery(pkg)
                                 
                             else:
@@ -185,4 +190,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-      
+  
