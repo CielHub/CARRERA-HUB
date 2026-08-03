@@ -17,6 +17,7 @@ from core.logger import log, set_console_logging
 from core.ui import console, reset_terminal
 from core.error_detector import start_error_detector
 from core.recovery_manager import start_recovery_manager, trigger_recovery, is_global_recovery
+from core.memory_guard import start_memory_guard
 from core.process_manager import get_pid
 from rich.live import Live
 from rich.table import Table
@@ -121,9 +122,10 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
         tracked_pids[pkg] = pid
         stats[pkg]['pid'] = pid if pid else '-'
 
-    # ERROR DETECTOR & RECOVERY MANAGER AKTIF
+    # ERROR DETECTOR, RECOVERY MANAGER, & MEMORY GUARD AKTIF
     start_error_detector()
     start_recovery_manager(packages, stats, tracked_pids, intent_url, timeout_seconds, config_data)
+    start_memory_guard(config_data)
 
     check_interval = 15
     last_check_time = current_time
@@ -190,4 +192,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-  
+          
