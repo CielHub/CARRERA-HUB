@@ -1,6 +1,7 @@
 """
 Modul: monitor.py
-Tanggung Jawab: Memantau status proses, Dashboard Real-time (Responsive), memicu Recovery Pintar.
+Tanggung Jawab: Memantau status proses, Dashboard Real-time (Responsive), memicu Recovery Pintar,
+                dan mengelola deteksi Error In-Game secara Non-Blocking.
 """
 import os
 import subprocess
@@ -42,14 +43,12 @@ def format_uptime(start_time, current_time):
 
 def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     renderables = []
-    # Deteksi ukuran terminal saat ini
     term_cols, term_lines = shutil.get_terminal_size()
     
     DASHBOARD_WIDTH = min(60, term_cols)
     rule = Text.from_markup(f"[dim cyan]{'─' * DASHBOARD_WIDTH}[/]")
 
     if include_header:
-        # BUG FIX: Jika tinggi terminal kurang dari 22 (karena Floating Window), gunakan Compact Mode
         if term_lines > 22:
             global _CACHED_HEADER_ART
             if _CACHED_HEADER_ART is None:
@@ -64,7 +63,7 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
             info_render = Text.from_markup(f"[dim white]Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}[/]")
             renderables.extend([header_render, info_render, rule])
         else:
-            # Mode Rapat (Compact) untuk layar sempit
+            # Mode Compact saat layar Termux menyempit agar tidak merusak render rich.live
             header_render = Text.from_markup(f"[bold green]CARRERA-HUB[/] [dim white]| Compact Mode | Packages {pkg_count}[/]")
             renderables.extend([header_render, rule])
 
@@ -107,7 +106,6 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     renderables.append(table)
     renderables.append(rule)
     
-    # Sembunyikan footer kontrol di layar sempit untuk menghemat baris
     if term_lines > 22:
         renderables.append(Text.from_markup("[dim white]CTRL+C Back to Menu   |   CTRL+Z Exit   |   Refresh: 1s[/]"))
     
@@ -197,7 +195,8 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
         tracked_pids[pkg] = pid
         stats[pkg]['pid'] = pid if pid else '-'
 
-  #  start_error_detector(stats)
+    # ERROR DETECTOR AKTIF: Mode Periodic Snapshot
+    start_error_detector(stats)
 
     check_interval = 15
     last_check_time = current_time
@@ -223,6 +222,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 
                             current_pid = get_pid(pkg)
                             
+                            # RECOVERY UNTUK LOGCAT DIHIDUPKAN KEMBALI
                             if stats[pkg].get('has_error'):
                                 os.system(f"su -c 'am force-stop {pkg}'")
                                 stats[pkg]['has_error'] = False
@@ -276,4 +276,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-      
+        
