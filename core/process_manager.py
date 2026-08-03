@@ -25,6 +25,20 @@ def pid_exists(pid):
     return result.returncode == 0
 
 
+def wait_until_process_dead(pid, timeout=5.0):
+
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+
+        if not pid_exists(pid):
+            return True
+
+        time.sleep(0.2)
+
+    return False
+
+
 def graceful_kill(pid, package=None):
 
     if not pid:
