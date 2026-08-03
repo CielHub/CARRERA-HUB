@@ -1,13 +1,11 @@
 """
 Modul: monitor.py
-Tanggung Jawab: Memantau status proses, Dashboard Real-time (Responsive), memicu Recovery Pintar,
-                dan mengelola deteksi Error In-Game secara Non-Blocking.
+Tanggung Jawab: Memantau status proses, Dashboard Real-time (Responsive), 
+                dan memicu Watchdog Recovery.
 """
 import os
-import subprocess
 import time
 import sys
-import threading
 import shutil
 
 try:
@@ -16,28 +14,16 @@ except ImportError:
     pass
 
 from core.logger import log, set_console_logging
-from core.launcher import launch_and_wait
 from core.ui import console, reset_terminal
-from core.cache_cleaner import clean_package_cache
-from core.error_detector import (
-    start_error_detector,
-    has_event,
-    get_event,
-)
-from core.process_manager import graceful_kill
+from core.error_detector import start_error_detector
+from core.recovery_manager import start_recovery_manager, trigger_recovery
+from core.process_manager import get_pid
 from rich.live import Live
 from rich.table import Table
 from rich.console import Group
 from rich.text import Text
 
 _CACHED_HEADER_ART = None
-
-def get_pid(pkg_name):
-    try:
-        result = subprocess.run(['pidof', pkg_name], capture_output=True, text=True)
-        return result.stdout.strip()
-    except FileNotFoundError:
-        return ""
 
 def format_uptime(start_time, current_time):
     if start_time == 0: return "00:00:00"
@@ -68,7 +54,6 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
             info_render = Text.from_markup(f"[dim white]Version 1.0.0   |   Status Monitoring   |   Packages {pkg_count}[/]")
             renderables.extend([header_render, info_render, rule])
         else:
-            # Mode Compact saat layar Termux menyempit agar tidak merusak render rich.live
             header_render = Text.from_markup(f"[bold green]CARRERA-HUB[/] [dim white]| Compact Mode | Packages {pkg_count}[/]")
             renderables.extend([header_render, rule])
 
@@ -116,65 +101,6 @@ def draw_dashboard(stats, current_time, pkg_count, include_header=True):
     
     return Group(*renderables)
 
-def recovery_worker(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids):
-    try:
-        log.info(f"RECOVERY: Menunggu 15 detik untuk {pkg} agar server Roblox melepas data...")
-        time.sleep(15)
-
-        clean_package_cache(pkg)
-        stats[pkg]['status'] = 'LOADING'
-        success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
-        
-        if not success:
-            try:
-                from core.autologin import run as run_autologin
-                stats[pkg]['status'] = 'LOGIN'
-                
-                login_status = run_autologin(pkg)
-                
-                if login_status in ["SUCCESS", "ALREADY_LOGGED_IN"]:
-                    stats[pkg]['status'] = 'LOADING'
-                    success = launch_and_wait(pkg, pkg_intent, timeout_seconds)
-                elif login_status == "CAPTCHA":
-                    stats[pkg]['status'] = 'CAPTCHA'
-                    return
-                else:
-                    stats[pkg]['status'] = 'LOGIN FAILED'
-                    return
-            except ImportError:
-                pass
-
-        current_time = time.time()
-        
-        if success:
-            new_pid = get_pid(pkg)
-            tracked_pids[pkg] = new_pid
-            stats[pkg]['pid'] = new_pid if new_pid else '-'
-            stats[pkg]['recovery_count'] += 1
-            stats[pkg]['status'] = 'ONLINE'
-            stats[pkg]['uptime_start'] = current_time
-            stats[pkg]['last_recovery_time'] = current_time
-            
-            if config_data and config_data.get('GRID_ENABLED'):
-                try:
-                    from core import gridlayout
-                    gridlayout.apply_grid_single(
-                        pkg, packages,
-                        cell_w=config_data.get('GRID_CELL_W') or None,
-                        cell_h=config_data.get('GRID_CELL_H') or None,
-                        cols=config_data.get('GRID_COLS') or None,
-                        margin=config_data.get('GRID_MARGIN', 10),
-                        offset_y=config_data.get('GRID_OFFSET_Y', 60),
-                    )
-                except ImportError:
-                    pass
-        else:
-            if stats[pkg]['status'] not in ['LOGIN FAILED', 'CAPTCHA']:
-                stats[pkg]['status'] = 'FAILED'
-    except Exception as e:
-        log.error(f"RECOVERY FATAL: {str(e)}")
-        stats[pkg]['status'] = 'FAILED'
-
 def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldown_secs, stats=None, config_data=None):
     log.info("MONITORING: Memasuki mode penjagaan (Watchdog & Error Detector)...")
     time.sleep(1)
@@ -186,13 +112,8 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
         stats = {pkg: {
             'pid': '-', 'status': 'ONLINE', 'uptime_start': current_time, 
             'launch_count': 1, 'recovery_count': 0, 'crash_count': 0,
-            'consecutive_crashes': 0, 'last_recovery_time': current_time, 'cooldown_until': 0,
-            'has_error': False
+            'consecutive_crashes': 0, 'last_recovery_time': current_time, 'cooldown_until': 0
         } for pkg in packages}
-    else:
-        for pkg in packages:
-            if 'has_error' not in stats[pkg]:
-                stats[pkg]['has_error'] = False
 
     tracked_pids = {}
     for pkg in packages:
@@ -200,8 +121,9 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
         tracked_pids[pkg] = pid
         stats[pkg]['pid'] = pid if pid else '-'
 
-    # ERROR DETECTOR AKTIF: Mode Periodic Snapshot
+    # ERROR DETECTOR & RECOVERY MANAGER AKTIF
     start_error_detector()
+    start_recovery_manager(packages, stats, tracked_pids, intent_url, timeout_seconds, config_data)
 
     check_interval = 15
     last_check_time = current_time
@@ -214,34 +136,8 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
             try:
                 while True:
                     current_time = time.time()
-                    while has_event():
-
-                        event = get_event()
-
-                        if event is None:
-                            break
-
-                        pid = event["pid"]
-
-                        for pkg in packages:
-
-                            if stats[pkg]["pid"] != pid:
-                                continue
-
-                            if stats[pkg]["status"] == "RECOVERY":
-                                break
-
-                            success = graceful_kill(
-                                pid,
-                                pkg
-                            )
-
-                            if success:
-                                stats[pkg]["status"] = "RECOVERY"
-                                stats[pkg]["has_error"] = True
-
-                            break
-          
+                    
+                    # Watchdog Check
                     if current_time - last_check_time >= check_interval:
                         for pkg in packages:
                             if stats[pkg]['status'] in ['RECOVERY', 'LOGIN', 'LOADING', 'CAPTCHA']:
@@ -253,21 +149,6 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                                 continue
                                 
                             current_pid = get_pid(pkg)
-                            
-                            # RECOVERY UNTUK LOGCAT DIHIDUPKAN KEMBALI
-                            if stats[pkg].get('has_error'):
-                                stats[pkg]['has_error'] = False
-                                stats[pkg]['status'] = 'RECOVERY'
-                                stats[pkg]['pid'] = '-'
-                                tracked_pids[pkg] = ''
-                                
-                                pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
-                                threading.Thread(
-                                    target=recovery_worker,
-                                    args=(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids),
-                                    daemon=True
-                                ).start()
-                                continue
 
                             if not current_pid or current_pid != tracked_pids[pkg]:
                                 stats[pkg]['crash_count'] += 1
@@ -281,13 +162,10 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
 
                                 stats[pkg]['status'] = 'RECOVERY'
                                 stats[pkg]['pid'] = '-'
+                                tracked_pids[pkg] = ''
                                 
-                                pkg_intent = intent_url[pkg] if isinstance(intent_url, dict) else intent_url
-                                threading.Thread(
-                                    target=recovery_worker,
-                                    args=(pkg, packages, pkg_intent, timeout_seconds, stats, config_data, tracked_pids),
-                                    daemon=True
-                                ).start()
+                                # Panggil Watchdog Recovery via RecoveryManager
+                                trigger_recovery(pkg)
                                 
                             else:
                                 stats[pkg]['pid'] = current_pid
@@ -307,4 +185,4 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                 pass
     finally:
         set_console_logging(True)
-        
+      
