@@ -221,8 +221,7 @@ def start_monitoring(packages, intent_url, timeout_seconds, max_retries, cooldow
                         pid = event["pid"]
 
                         for pkg in packages:
-                            if stats[pkg]["pid"] == pid and
-                               stats[pkg]["status"] == "ONLINE":
+                            if stats[pkg]["pid"] == pid and stats[pkg]["status"] == "ONLINE":
                                stats[pkg]["has_error"] = True
                                break
           
