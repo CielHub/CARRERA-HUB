@@ -1,8 +1,9 @@
 """
 Modul : recovery_manager.py
 Tanggung Jawab:
-- Mengatur keseluruhan alur recovery Error267 (GLOBAL MODE) dan Crash (SINGLE MODE).
-- Mengeksekusi kill pada target.
+- Mengatur keseluruhan alur recovery Error267 dan Low Memory (GLOBAL MODE).
+- Mengatur alur Crash Biasa (SINGLE MODE).
+- Mengeksekusi kill pada target dan melakukan peluncuran ulang.
 - Pause Watchdog saat Global Recovery aktif.
 """
 
@@ -11,6 +12,7 @@ import time
 from enum import Enum
 
 from core.error_detector import has_event, get_event
+from core.memory_guard import has_memory_event, get_memory_event, reset_memory_guard
 from core.process_manager import graceful_kill, get_pid
 from core.cache_cleaner import clean_package_cache
 from core.launcher import launch_and_wait
@@ -38,6 +40,9 @@ class RecoveryManager:
         
         self.global_status = None
         self.global_countdown = 0
+        
+        # Lock untuk memastikan anti duplicate recovery
+        self.recovery_lock = threading.Lock()
 
     def configure(self, packages, stats, tracked_pids, intent_url, timeout_seconds, config_data):
         self.packages = packages
@@ -120,6 +125,57 @@ class RecoveryManager:
 
     def _worker(self):
         while self._running:
+            
+            # ==================================================
+            # 1. EVENT: MEMORY GUARD (RAM RENDAH)
+            # ==================================================
+            while has_memory_event():
+                event = get_memory_event()
+                
+                if event is None:
+                    break
+
+                if self.is_global_recovery():
+                    continue
+
+                if not self.recovery_lock.acquire(blocking=False):
+                    continue
+
+                try:
+                    self.enter_global_recovery()
+                    
+                    avail = event['available_mb']
+                    thresh = self.config_data.get("MEMORY_THRESHOLD_MB", 200)
+                    is_emerg = event.get('is_emergency', False)
+                    
+                    log.info(f"[MEMORY] Available RAM : {avail}MB (Threshold : {thresh}MB)")
+                    if is_emerg:
+                        log.warning("[MEMORY] EMERGENCY LEVEL DETECTED!")
+                        
+                    log.info(f"[GLOBAL] Killing {len(self.packages)} Packages...")
+                    self.kill_all_packages()
+
+                    if not self.wait_all_dead():
+                        log.warning("[GLOBAL] Beberapa package lambat di-kill. Melanjutkan eksekusi...")
+
+                    # Delay darurat 5 detik, delay normal sesuai config
+                    delay = 5 if is_emerg else self.config_data.get("GLOBAL_RECOVERY_DELAY", 30)
+                    
+                    log.info(f"[GLOBAL] Waiting {delay} Seconds...")
+                    self.global_delay(delay)
+
+                    log.info("[GLOBAL] Launching Packages...")
+                    self.launch_all_packages()
+
+                    log.info("[GLOBAL] Recovery Completed. Resuming watchdog.")
+                finally:
+                    self.exit_global_recovery()
+                    self.recovery_lock.release()
+                    reset_memory_guard()
+
+            # ==================================================
+            # 2. EVENT: ERROR 267 DLL (IN-GAME)
+            # ==================================================
             while has_event():
                 event = get_event()
                 
@@ -127,34 +183,40 @@ class RecoveryManager:
                     break
                 
                 reason = event.get("reason")
-                pid = event.get("pid")
                 
-                # Cek jika error global (Misal: 267)
                 if reason in (266, 267, 277, 279, 280):
                     is_enabled = self.config_data.get("GLOBAL_RECOVERY_ENABLED", True)
                     if not is_enabled:
                         continue
                         
-                    log.info(f"[GLOBAL] Error {reason} detected on PID {pid}. Initiating Global Recovery.")
-                    self.enter_global_recovery()
-                    log.info("[GLOBAL] Pausing watchdog.")
-                    
-                    log.info(f"[GLOBAL] Killing {len(self.packages)} packages...")
-                    self.kill_all_packages()
-                    
-                    if not self.wait_all_dead():
-                        log.warning("[GLOBAL] Some packages did not die gracefully. Proceeding anyway.")
+                    if self.is_global_recovery():
+                        continue
                         
-                    delay = self.config_data.get("GLOBAL_RECOVERY_DELAY", 30)
-                    log.info(f"[GLOBAL] Waiting {delay} seconds...")
-                    self.global_delay(delay)
-                    
-                    log.info("[GLOBAL] Launching all packages...")
-                    self.launch_all_packages()
-                    
-                    log.info("[GLOBAL] Recovery completed. Resuming watchdog.")
-                    self.exit_global_recovery()
-                    continue
+                    if not self.recovery_lock.acquire(blocking=False):
+                        continue
+
+                    try:
+                        self.enter_global_recovery()
+                        
+                        log.info(f"[ERROR{reason}] Detected on PID {event.get('pid')}. Initiating Global Recovery.")
+                        log.info(f"[GLOBAL] Killing {len(self.packages)} Packages...")
+                        self.kill_all_packages()
+                        
+                        if not self.wait_all_dead():
+                            log.warning("[GLOBAL] Beberapa package lambat di-kill. Melanjutkan eksekusi...")
+                            
+                        delay = self.config_data.get("GLOBAL_RECOVERY_DELAY", 30)
+                        
+                        log.info(f"[GLOBAL] Waiting {delay} Seconds...")
+                        self.global_delay(delay)
+                        
+                        log.info("[GLOBAL] Launching Packages...")
+                        self.launch_all_packages()
+                        
+                        log.info("[GLOBAL] Recovery Completed. Resuming watchdog.")
+                    finally:
+                        self.exit_global_recovery()
+                        self.recovery_lock.release()
 
             time.sleep(0.1)
 
@@ -242,7 +304,6 @@ def stop_recovery_manager():
     _manager.stop()
 
 def trigger_recovery(pkg):
-    """Memicu recovery tunggal (SINGLE MODE) via Thread independen."""
     threading.Thread(
         target=_manager.single_recovery_worker,
         args=(pkg,),
@@ -254,4 +315,4 @@ def is_global_recovery():
 
 def get_global_state():
     return _manager.get_global_state()
-                
+        
